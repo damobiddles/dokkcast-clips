@@ -9,12 +9,6 @@
     "file": "assets/logo/udokk_logo_gradient.svg",
     "width": 380
   },
-  "layout": {
-    "crop": "auto",
-    "video_y_offset": 0,
-    "logo_center_y": 330,
-    "captions_center_y": 1560
-  },
   "captions": {
     "font_family": "Manrope ExtraBold",
     "size": 84,
@@ -28,6 +22,32 @@
   },
   "models": {
     "whisper_dir": "models/whisper-small.en",
-    "ctc_dir": "models/ctc-conformer-small"
+    "ctc_dir": "models/ctc-conformer-small",
+    "diar_dir": "models/diar"
+  },
+  "layouts": {
+    "wide": {
+      "follow": false,
+      "crop": "auto",
+      "video_y_offset": 0,
+      "logo_center_y": 330,
+      "captions_center_y": 1560
+    },
+    "speaker": {
+      "follow": true,
+      "crop": "auto",
+      "window_width": 720,
+      "video_center_y": 980,
+      "logo_center_y": 270,
+      "captions_center_y": 1610,
+      "speaker_x": {
+        "left": 0.3,
+        "right": 0.73
+      },
+      "speaker_sides": "auto",
+      "min_hold": 0.8,
+      "lead": 0.15,
+      "pan_seconds": 0.5
+    }
   }
 }

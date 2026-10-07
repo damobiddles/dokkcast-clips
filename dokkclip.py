@@ -5,6 +5,7 @@ a branded background and word-highlighted Manrope captions.
     python dokkclip.py all input/clip.mp4            # transcribe + render
     python dokkclip.py transcribe input/clip.mp4     # writes output/clip.words.json
     python dokkclip.py render input/clip.mp4         # uses output/clip.words.json
+    python dokkclip.py render input/clip.mp4 --layout speaker   # follows whoever is talking
 
 Branding lives in brand.json. Words can come from any source: render only needs
 a JSON list of {"w": "word", "s": start_seconds, "e": end_seconds}.
@@ -136,11 +137,10 @@ def group_words(words, cap):
     return groups
 
 
-def make_ass(words, brand, path, dur):
+def make_ass(words, brand, path, dur, y):
     W, H = brand["canvas"]["width"], brand["canvas"]["height"]
     cap = brand["captions"]
     base, hi = hex_bgr(cap["color"]), hex_bgr(cap["highlight"])
-    y = brand["layout"]["captions_center_y"]
     lines = [
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}", "WrapStyle: 0", "",
         "[V4+ Styles]",
@@ -194,23 +194,128 @@ def detect_crop(video):
     return f"{wid}:{h}:0:{y}"
 
 
-def render(video, words_json, out_mp4, brand, work):
+# ---------------------------------------------------------------- speaker follow
+def diarize(video, out_json, models, speakers=2):
+    """Who speaks when -> [{"s", "e", "spk"}]. Needs the pyannote + embedding models."""
+    import sherpa_onnx
+    d = ROOT / models["diar_dir"]
+    cfg = sherpa_onnx.OfflineSpeakerDiarizationConfig(
+        segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
+            pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
+                model=str(d / "sherpa-onnx-pyannote-segmentation-3-0/model.int8.onnx")), num_threads=4),
+        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(d / "emb.onnx"), num_threads=4),
+        clustering=sherpa_onnx.FastClusteringConfig(num_clusters=speakers),
+        min_duration_on=0.3, min_duration_off=0.4)
+    res = sherpa_onnx.OfflineSpeakerDiarization(cfg).process(load_audio(video)).sort_by_start_time()
+    turns = [{"s": round(r.start, 2), "e": round(r.end, 2), "spk": r.speaker} for r in res]
+    Path(out_json).write_text(json.dumps(turns, indent=1))
+    print(f"{len(turns)} speaker turns -> {out_json}")
+    return turns
+
+
+def estimate_sides(video, band, turns):
+    """Which speaker sits left/right? The one whose turns coincide with more motion on the right."""
+    import numpy as np
+    cw, ch, cx, cy = band
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(video), "-vf",
+                          f"crop={cw}:{ch}:{cx}:{cy},fps=5,scale=160:90,format=gray", "-f", "rawvideo", "-"],
+                         capture_output=True, check=True).stdout
+    f = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 90, 160).astype(np.float32)
+    d = np.abs(np.diff(f, axis=0))
+    left, right = d[:, :, :80].mean((1, 2)), d[:, :, 80:].mean((1, 2))
+    share = right / (left + right + 1e-6)
+    score = {}
+    for spk in sorted({t["spk"] for t in turns}):
+        idx = [i for i in range(len(share)) if any(t["spk"] == spk and t["s"] <= (i + 1) / 5 < t["e"] for t in turns)
+               and not any(t["spk"] != spk and t["s"] <= (i + 1) / 5 < t["e"] for t in turns)]
+        score[spk] = float(share[idx].mean()) if idx else 0.5
+    order = sorted(score, key=score.get)
+    return {spk: ("left" if k < len(order) / 2 else "right") for k, spk in enumerate(order)}, score
+
+
+def camera_runs(turns, min_hold, step=0.1):
+    """Collapse turns into a list of (start_time, speaker) camera cuts, ignoring brief interjections."""
+    end = max(t["e"] for t in turns)
+    seq, cur = [], turns[0]["spk"]
+    for i in range(int(end / step) + 1):
+        t = i * step
+        act = [x for x in turns if x["s"] <= t < x["e"]]
+        if act:
+            cur = max(act, key=lambda x: x["s"])["spk"]
+        seq.append(cur)
+    runs = []  # [start, spk, length]
+    for i, spk in enumerate(seq):
+        if runs and runs[-1][1] == spk:
+            runs[-1][2] += step
+        else:
+            runs.append([i * step, spk, step])
+    changed = True
+    while changed and len(runs) > 1:  # absorb runs shorter than min_hold
+        changed = False
+        for k, r in enumerate(runs):
+            if r[2] < min_hold:
+                if k == 0:
+                    runs[1][0], runs[1][2] = r[0], runs[1][2] + r[2]
+                else:
+                    runs[k - 1][2] += r[2]
+                del runs[k]
+                changed = True
+                break
+        merged = []
+        for r in runs:
+            if merged and merged[-1][1] == r[1]:
+                merged[-1][2] += r[2]
+            else:
+                merged.append(r)
+        runs = merged
+    return [(r[0], r[1]) for r in runs]
+
+
+def pan_expression(runs, xs, lead, pan):
+    """ffmpeg expression for crop x(t): holds on a speaker, eases to the next one."""
+    x0, terms = xs[runs[0][1]], []
+    for (t, spk), (_, prev) in zip(runs[1:], runs):
+        dx = xs[spk] - xs[prev]
+        if dx:
+            u = f"clip((t-{max(0, t - lead):.3f})/{pan},0,1)"
+            terms.append(f"{dx:.1f}*pow({u},2)*(3-2*{u})")
+    return f"{x0:.1f}" + "".join(f"+{t}" for t in terms)
+
+
+def render(video, words_json, out_mp4, brand, work, layout="wide"):
     work.mkdir(parents=True, exist_ok=True)
     words = json.loads(Path(words_json).read_text())
-    c, L = brand["canvas"], brand["layout"]
+    c, L = brand["canvas"], brand["layouts"][layout]
     W, H = c["width"], c["height"]
     dur = float(sh(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video)]).stdout)
-    crop = L["crop"] if L["crop"] != "auto" else detect_crop(video)
-    cw, ch, _, _ = map(int, crop.split(":"))
-    vid_h = round(ch * W / cw / 2) * 2
-    vid_y = (H - vid_h) // 2 + L["video_y_offset"]
+    band = L["crop"] if L["crop"] != "auto" else detect_crop(video)
+    bw, bh, bx, by = map(int, band.split(":"))
+    if L["follow"]:
+        ww = L["window_width"]
+        turns_json = ROOT / "output" / f"{Path(video).stem}.turns.json"
+        turns = json.loads(turns_json.read_text()) if turns_json.exists() else diarize(video, turns_json, brand["models"])
+        sides = L["speaker_sides"]
+        if sides == "auto":
+            sides, score = estimate_sides(video, (bw, bh, bx, by), turns)
+            print("speaker sides (auto):", sides, {k: round(v, 2) for k, v in score.items()})
+        sides = {int(k): v for k, v in sides.items()}
+        xs = {spk: max(0, min(bw - ww, round(L["speaker_x"][side] * bw - ww / 2))) for spk, side in sides.items()}
+        runs = camera_runs(turns, L["min_hold"])
+        print("camera cuts:", [(round(t, 1), s) for t, s in runs])
+        xexpr = pan_expression(runs, xs, L["lead"], L["pan_seconds"])
+        vid_h = round(bh * W / ww / 2) * 2
+        vid_y = L["video_center_y"] - vid_h // 2
+        vfilter = f"crop={ww}:{bh}:x='{xexpr}':y={by},scale={W}:{vid_h}:flags=lanczos"
+    else:
+        vid_h = round(bh * W / bw / 2) * 2
+        vid_y = (H - vid_h) // 2 + L["video_y_offset"]
+        vfilter = f"crop={bw}:{bh}:{bx}:{by},scale={W}:{vid_h}:flags=lanczos"
     bg, logo, ass = work / "bg.png", work / "logo.png", work / "captions.ass"
-    make_background(brand, bg); make_logo(brand, logo); make_ass(words, brand, ass, dur)
+    make_background(brand, bg); make_logo(brand, logo); make_ass(words, brand, ass, dur, L["captions_center_y"])
     from PIL import Image
-    lh = Image.open(logo).height
-    logo_y = L["logo_center_y"] - lh // 2
+    logo_y = L["logo_center_y"] - Image.open(logo).height // 2
     fonts = (ROOT / "assets/fonts").as_posix()
-    fc = (f"[0:v]crop={crop},scale={W}:{vid_h}[v];[1:v][v]overlay=0:{vid_y}[a];"
+    fc = (f"[0:v]{vfilter}[v];[1:v][v]overlay=0:{vid_y}[a];"
           f"[a][2:v]overlay=(W-w)/2:{logo_y}[b];[b]subtitles={ass.as_posix()}:fontsdir={fonts}[out]")
     sh(["ffmpeg", "-y", "-v", "error", "-i", str(video), "-loop", "1", "-i", str(bg), "-loop", "1", "-i", str(logo),
         "-filter_complex", fc, "-map", "[out]", "-map", "0:a?", "-t", f"{dur}", "-c:v", "libx264", "-crf", "18",
@@ -223,9 +328,10 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("command", choices=["transcribe", "render", "all"])
     p.add_argument("video")
+    p.add_argument("--layout", default="wide", help="wide (whole shot) or speaker (follows who is talking)")
     p.add_argument("--brand", default=str(ROOT / "brand.json"))
     p.add_argument("--words", help="word-timing JSON (default: output/<name>.words.json)")
-    p.add_argument("--out", help="output mp4 (default: output/<name>_branded.mp4)")
+    p.add_argument("--out", help="output mp4 (default: output/<name>_<layout>.mp4)")
     a = p.parse_args()
     brand, video = load_brand(a.brand), Path(a.video)
     outdir = ROOT / "output"; outdir.mkdir(exist_ok=True)
@@ -233,7 +339,8 @@ def main():
     if a.command in ("transcribe", "all"):
         transcribe(video, words, brand["models"])
     if a.command in ("render", "all"):
-        render(video, words, Path(a.out) if a.out else outdir / f"{video.stem}_branded.mp4", brand, outdir / ".work")
+        out = Path(a.out) if a.out else outdir / f"{video.stem}_{a.layout}.mp4"
+        render(video, words, out, brand, outdir / ".work", a.layout)
 
 
 if __name__ == "__main__":
