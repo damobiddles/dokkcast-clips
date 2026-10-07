@@ -1,0 +1,33 @@
+{
+  "canvas": {
+    "width": 1080,
+    "height": 1920,
+    "bg_top": "#0A0F2C",
+    "bg_bottom": "#251A63"
+  },
+  "logo": {
+    "file": "assets/logo/udokk_logo_gradient.svg",
+    "width": 380
+  },
+  "layout": {
+    "crop": "auto",
+    "video_y_offset": 0,
+    "logo_center_y": 330,
+    "captions_center_y": 1560
+  },
+  "captions": {
+    "font_family": "Manrope ExtraBold",
+    "size": 84,
+    "color": "#FFFFFF",
+    "highlight": "#75C0FB",
+    "outline": 0,
+    "shadow": 2,
+    "margin_x": 90,
+    "max_words": 4,
+    "max_chars": 30
+  },
+  "models": {
+    "whisper_dir": "models/whisper-small.en",
+    "ctc_dir": "models/ctc-conformer-small"
+  }
+}

@@ -1,0 +1,6 @@
+sherpa-onnx
+numpy
+Pillow
+cairosvg
+fonttools
+brotli
