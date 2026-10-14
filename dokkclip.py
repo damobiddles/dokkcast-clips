@@ -130,7 +130,7 @@ def group_words(words, cap):
         cur.append(w)
         n = sum(len(x["w"]) + 1 for x in cur)
         if len(cur) >= cap["max_words"] or n >= cap["max_chars"] or re.search(r"[.?!]$", w["w"]) \
-                or (w["e"] - w["s"] > 0 and re.search(r"[,;:]$", w["w"]) and len(cur) >= 3):
+                or w.get("brk") or (w["e"] - w["s"] > 0 and re.search(r"[,;:]$", w["w"]) and len(cur) >= 3):
             groups.append(cur); cur = []
     if cur:
         groups.append(cur)

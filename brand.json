@@ -36,7 +36,7 @@
     "speaker": {
       "follow": true,
       "crop": "auto",
-      "window_width": 720,
+      "window_width": 1160,
       "video_center_y": 980,
       "logo_center_y": 270,
       "captions_center_y": 1610,
