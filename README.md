@@ -51,8 +51,10 @@ highlight colour, caption position. Fonts are Manrope (SIL OFL, see `assets/font
 1. **prep** extracts the audio, transcribes it, works out who speaks when, and writes
    `output/<name>/plan.json` with the pauses (over 1 s), filler words and stutters it can find.
    Use `--speakers 3` for three people.
-2. Claude reads `output/<name>/transcript.txt` and adds the editorial part of the plan: awkward or
-   repeated passages to cut, the hook, 30 to 60 second clips and stat cards.
+2. Claude reads `output/<name>/transcript.txt` and writes the editorial part of the plan: awkward or
+   repeated passages to cut, the hook, 30 to 60 second clips and stat cards. Items can give word
+   numbers from the transcript (`"w": [first, last]`) instead of times. Merge them with
+   `python dokkepisode.py suggest <name> suggestions.json`.
 3. **review** builds a page that plays each suggestion with and without the cut. Tick or untick,
    name the speakers, then "Copy my choices" into the chat or download `plan.json` over the old one.
 4. **render** writes `output/<name>/<name>_edited.mp4`: the hook, then the episode with accepted cuts,

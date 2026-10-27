@@ -61,7 +61,6 @@ def prep(video, brand, speakers=2):
         print("working out who speaks when ...")
         dokkclip.diarize(wav, turns_json, brand["models"], speakers)
     words, turns = json.loads(words_json.read_text()), json.loads(turns_json.read_text())
-    words = fix_names(words, brand["episode"]["spellings"])
     tag_speakers(words, turns)
     words_json.write_text(json.dumps(words, indent=1))
     write_transcript(words, wd / "transcript.txt")
@@ -74,6 +73,32 @@ def prep(video, brand, speakers=2):
         plan_json.write_text(json.dumps(plan, indent=1))
         print(f"{len(plan['cuts'])} suggested cuts -> {plan_json}")
     print(f"transcript -> {wd / 'transcript.txt'}")
+
+
+def load_plan(wd):
+    """plan.json, with any item given by word numbers ("w": [first, last], as numbered in
+    transcript.txt) turned into times. Cuts run to the start of the next word."""
+    plan = json.loads((wd / "plan.json").read_text())
+    words = json.loads((wd / "words.json").read_text())
+
+    def at(item, kind):
+        if "w" not in item:
+            return item
+        a, b = item["w"]
+        s, e = words[a]["s"], words[b]["e"]
+        if kind == "cut":
+            e = words[b + 1]["s"] if b + 1 < len(words) else e
+        elif kind == "stat":
+            e = max(e + 1.5, s + 5)
+        else:  # hook, clip: a little air either side
+            s, e = max(0, s - 0.15), e + 0.3
+        return dict(item, s=round(s, 3), e=round(e, 3))
+    plan["cuts"] = [at(c, "cut") for c in plan["cuts"]]
+    plan["clips"] = [at(c, "clip") for c in plan.get("clips", [])]
+    plan["stats"] = [at(c, "stat") for c in plan.get("stats", [])]
+    if plan.get("hook"):
+        plan["hook"] = at(plan["hook"], "clip")
+    return plan
 
 
 def fix_names(words, spellings):
@@ -148,10 +173,32 @@ def auto_cuts(words, cfg):
     return [c for c in cuts if c["e"] - c["s"] > 0.05]
 
 
+# --------------------------------------------------------------------- suggest
+def suggest(name, path):
+    """Merge editorial suggestions (speakers, cuts, hook, clips, stats) into plan.json.
+    Re-running with the same file replaces the earlier editorial cuts rather than adding twice."""
+    wd = work_dir(name)
+    plan = json.loads((wd / "plan.json").read_text())
+    new = json.loads(Path(path).expanduser().read_text())
+    for spk, who in new.get("speakers", {}).items():
+        plan["speakers"].setdefault(spk, {}).update({k: v for k, v in who.items() if v})
+    cuts = [c for c in plan["cuts"] if c["kind"] in ("pause", "filler", "repeat")]
+    nid = max((c["id"] for c in cuts), default=0)
+    for k, c in enumerate(new.get("cuts", []), nid + 1):
+        cuts.append(dict({"kind": "edit", "accept": False}, **c, id=k))
+    plan["cuts"] = cuts
+    for key in ("hook", "clips", "stats"):
+        if key in new:
+            plan[key] = new[key]
+    (wd / "plan.json").write_text(json.dumps(plan, indent=1))
+    print(f"{len(new.get('cuts', []))} editorial cuts, {len(plan['clips'])} clips, {len(plan['stats'])} stat cards -> {wd / 'plan.json'}")
+    review(name)
+
+
 # ---------------------------------------------------------------------- review
 def review(name):
     wd = work_dir(name)
-    plan = json.loads((wd / "plan.json").read_text())
+    plan = load_plan(wd)
     words = json.loads((wd / "words.json").read_text())
 
     def text(s, e):
@@ -318,7 +365,7 @@ def lower_thirds(plan, turns, fwd, secs, after):
 
 def render_episode(name, brand):
     wd = work_dir(name); work = wd / ".work"; work.mkdir(parents=True, exist_ok=True)
-    plan = json.loads((wd / "plan.json").read_text())
+    plan = load_plan(wd)
     video, cfg = Path(plan["video"]), brand["episode"]
     info = probe(video)
     turns = json.loads((wd / "turns.json").read_text())
@@ -382,7 +429,7 @@ def render_episode(name, brand):
 def render_clips(name, brand, only_id=None):
     wd = work_dir(name); cdir = wd / "clips"; work = wd / ".work"
     cdir.mkdir(parents=True, exist_ok=True); work.mkdir(parents=True, exist_ok=True)
-    plan = json.loads((wd / "plan.json").read_text())
+    plan = load_plan(wd)
     video, cfg = Path(plan["video"]), brand["episode"]
     info = probe(video)
     words = json.loads((wd / "words.json").read_text())
@@ -409,7 +456,7 @@ def render_clips(name, brand, only_id=None):
             s = fwd(w["s"])
             if s is not None:
                 cw.append({"w": w["w"], "s": round(s, 3), "e": round(fwd(w["e"]) or s + 0.3, 3)})
-        cw = dokkclip.fix_ends(cw, dur)
+        cw = dokkclip.fix_ends(fix_names(cw, cfg["spellings"]), dur)
         (cdir / f"{stem}.words.json").write_text(json.dumps(cw, indent=1))
         ct = []
         for t in turns:
@@ -427,8 +474,9 @@ def render_clips(name, brand, only_id=None):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["prep", "review", "render"])
+    p.add_argument("command", choices=["prep", "suggest", "review", "render"])
     p.add_argument("target", help="prep: the episode video; review/render: the episode name (file name without .mp4)")
+    p.add_argument("file", nargs="?", help="suggest: JSON with editorial suggestions")
     p.add_argument("--only", choices=["episode", "clips"])
     p.add_argument("--clip", type=int, help="render just this clip id")
     p.add_argument("--speakers", type=int, default=2, help="prep: how many people talk in the episode")
@@ -439,6 +487,8 @@ def main():
         sys.exit("ffmpeg not found: run ./setup.sh first")
     if a.command == "prep":
         prep(a.target, brand, a.speakers)
+    elif a.command == "suggest":
+        suggest(Path(a.target).stem, a.file)
     elif a.command == "review":
         review(Path(a.target).stem)
     else:
