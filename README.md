@@ -36,3 +36,31 @@ fix a misheard word, then re-run `render` (about 20 seconds).
 
 Everything is in `brand.json`: colours, logo size and position, caption font, size and
 highlight colour, caption position. Fonts are Manrope (SIL OFL, see `assets/fonts`).
+
+## Full episodes
+
+`dokkepisode.py` gives a whole episode a light edit and cuts branded clips from it.
+
+```bash
+./setup.sh                                         # one-off: ffmpeg, Python packages, models
+.venv/bin/python dokkepisode.py prep ~/Videos/ep12.mp4     # transcript + automatic cut suggestions
+.venv/bin/python dokkepisode.py review ep12                # output/ep12/review.html: check every suggestion
+.venv/bin/python dokkepisode.py render ep12                # edited episode + clips
+```
+
+1. **prep** extracts the audio, transcribes it, works out who speaks when, and writes
+   `output/<name>/plan.json` with the pauses (over 1 s), filler words and stutters it can find.
+   Use `--speakers 3` for three people.
+2. Claude reads `output/<name>/transcript.txt` and writes the editorial part of the plan: awkward or
+   repeated passages to cut, the hook, 30 to 60 second clips and stat cards. Items can give word
+   numbers from the transcript (`"w": [first, last]`) instead of times. Merge them with
+   `python dokkepisode.py suggest <name> suggestions.json`.
+3. **review** builds a page that plays each suggestion with and without the cut. Tick or untick,
+   name the speakers, then "Copy my choices" into the chat or download `plan.json` over the old one.
+4. **render** writes `output/<name>/<name>_edited.mp4`: the hook, then the episode with accepted cuts,
+   cleaned audio at -16 LUFS, name cards the first time each speaker talks, stat cards, and a quiet
+   music bed under the intro and outro if a track is in `assets/music/`. Each clip is rendered three
+   ways into `output/<name>/clips/`: `portrait` (9:16), `square` (1:1) and `landscape` (16:9).
+
+The cuts, audio chain, music level and spellings of names the recogniser mishears are in the
+`episode` section of `brand.json`. The video never leaves the machine it is on.
