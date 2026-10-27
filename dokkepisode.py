@@ -280,7 +280,12 @@ def write_wav(x, path):
 
 def video_trim(segs, fps):
     """select filter keeping only the given original-time segments, with continuous timestamps."""
-    expr = "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in segs)
+    def tree(terms):  # ffmpeg rejects a flat sum of more than ~100 terms; a balanced tree is fine
+        if len(terms) == 1:
+            return terms[0]
+        mid = len(terms) // 2
+        return f"({tree(terms[:mid])}+{tree(terms[mid:])})"
+    expr = tree([f"between(t,{a:.3f},{b:.3f})" for a, b in segs])
     return f"select='{expr}',setpts=N/({fps})/TB"
 
 
