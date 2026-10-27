@@ -48,6 +48,91 @@
       "min_hold": 0.8,
       "lead": 0.15,
       "pan_seconds": 0.5
+    },
+    "square": {
+      "follow": false,
+      "crop": "auto",
+      "video_y_offset": -10,
+      "canvas": {
+        "width": 1080,
+        "height": 1080
+      },
+      "captions": {
+        "size": 62,
+        "max_chars": 28
+      },
+      "logo": {
+        "width": 200
+      },
+      "logo_center_y": 125,
+      "captions_center_y": 960
+    },
+    "landscape": {
+      "follow": false,
+      "crop": "auto",
+      "video_y_offset": 0,
+      "canvas": {
+        "width": 1920,
+        "height": 1080
+      },
+      "captions": {
+        "size": 66,
+        "max_chars": 34,
+        "shadow": 3
+      },
+      "logo": {
+        "width": 220
+      },
+      "logo_x": "W-w-56",
+      "logo_center_y": 80,
+      "captions_center_y": 950
+    }
+  },
+  "clips": {
+    "formats": {
+      "portrait": "speaker",
+      "square": "square",
+      "landscape": "landscape"
+    }
+  },
+  "episode": {
+    "pause_max": 1.0,
+    "pause_keep": 0.4,
+    "fillers": [
+      "um",
+      "uh",
+      "uhm",
+      "umm",
+      "erm",
+      "er",
+      "ah",
+      "hmm",
+      "mm"
+    ],
+    "audio": "highpass=f=80,afftdn=nr=10:nf=-40:tn=1,deesser=i=0.3,acompressor=threshold=0.1:ratio=3:attack=10:release=150:makeup=2,loudnorm=I=-16:TP=-1.5:LRA=11",
+    "music": {
+      "dir": "assets/music",
+      "level_db": -24,
+      "intro_seconds": 20,
+      "outro_seconds": 20,
+      "fade": 3
+    },
+    "lower_third_seconds": 6,
+    "video": [
+      "-c:v",
+      "libx264",
+      "-crf",
+      "18",
+      "-preset",
+      "fast"
+    ],
+    "spellings": {
+      "doc cast": "Dokkcast",
+      "dock cast": "Dokkcast",
+      "dokcast": "Dokkcast",
+      "docast": "Dokkcast",
+      "u dock": "udokk",
+      "you dock": "udokk"
     }
   }
 }

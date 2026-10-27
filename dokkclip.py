@@ -282,17 +282,27 @@ def pan_expression(runs, xs, lead, pan):
     return f"{x0:.1f}" + "".join(f"+{t}" for t in terms)
 
 
-def render(video, words_json, out_mp4, brand, work, layout="wide"):
+def layout_brand(brand, L):
+    """A layout may override canvas size, caption and logo settings (e.g. square, landscape)."""
+    b = json.loads(json.dumps(brand))
+    for k in ("canvas", "captions", "logo"):
+        b[k].update(L.get(k, {}))
+    return b
+
+
+def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=None):
     work.mkdir(parents=True, exist_ok=True)
     words = json.loads(Path(words_json).read_text())
-    c, L = brand["canvas"], brand["layouts"][layout]
+    L = brand["layouts"][layout]
+    brand = layout_brand(brand, L)
+    c = brand["canvas"]
     W, H = c["width"], c["height"]
     dur = float(sh(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video)]).stdout)
     band = L["crop"] if L["crop"] != "auto" else detect_crop(video)
     bw, bh, bx, by = map(int, band.split(":"))
     if L["follow"]:
         ww = L["window_width"]
-        turns_json = ROOT / "output" / f"{Path(video).stem}.turns.json"
+        turns_json = Path(turns_json) if turns_json else ROOT / "output" / f"{Path(video).stem}.turns.json"
         turns = json.loads(turns_json.read_text()) if turns_json.exists() else diarize(video, turns_json, brand["models"])
         sides = L["speaker_sides"]
         if sides == "auto":
@@ -316,7 +326,7 @@ def render(video, words_json, out_mp4, brand, work, layout="wide"):
     logo_y = L["logo_center_y"] - Image.open(logo).height // 2
     fonts = (ROOT / "assets/fonts").as_posix()
     fc = (f"[0:v]{vfilter}[v];[1:v][v]overlay=0:{vid_y}[a];"
-          f"[a][2:v]overlay=(W-w)/2:{logo_y}[b];[b]subtitles={ass.as_posix()}:fontsdir={fonts}[out]")
+          f"[a][2:v]overlay={L.get('logo_x', '(W-w)/2')}:{logo_y}[b];[b]subtitles={ass.as_posix()}:fontsdir={fonts}[out]")
     sh(["ffmpeg", "-y", "-v", "error", "-i", str(video), "-loop", "1", "-i", str(bg), "-loop", "1", "-i", str(logo),
         "-filter_complex", fc, "-map", "[out]", "-map", "0:a?", "-t", f"{dur}", "-c:v", "libx264", "-crf", "18",
         "-preset", "medium", "-pix_fmt", "yuv420p", "-r", "24000/1001", "-c:a", "aac", "-b:a", "192k",

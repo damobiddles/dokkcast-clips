@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dokkcast edit review</title>
+<style>
+  :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --cut: #ff8a8a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); padding: 12px 16px; }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  video { width: 100%; max-height: 42vh; background: #000; border-radius: 8px; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  h2 { font-size: 16px; margin: 28px 0 10px; color: var(--hi); }
+  .summary { color: var(--dim); font-size: 13px; margin-top: 6px; }
+  main { padding: 0 16px 80px; }
+  .item { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+  .item.off { opacity: .55; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .tag { font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--dim); }
+  .tag.edit { border-color: var(--hi); color: var(--hi); }
+  .time { font-variant-numeric: tabular-nums; color: var(--dim); font-size: 13px; }
+  .text { margin-top: 6px; }
+  .text s { color: var(--cut); }
+  .ctx { color: var(--dim); }
+  button { background: #222a5c; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  button:hover { border-color: var(--hi); }
+  button.primary { background: var(--hi); color: #0A0F2C; border: 0; font-weight: 600; padding: 8px 14px; }
+  label.toggle { margin-left: auto; display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  input[type=text] { background: #0d1233; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; min-width: 0; flex: 1; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+  .filters button.on { border-color: var(--hi); color: var(--hi); }
+  footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 16px; }
+  footer .wrap { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #msg { color: var(--dim); font-size: 13px; }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1 id="title">Edit review</h1>
+  <video id="v" controls preload="metadata"></video>
+  <div class="summary" id="summary"></div>
+</div></header>
+<main><div class="wrap">
+  <h2>Who's who</h2>
+  <div id="speakers"></div>
+  <h2>Hook</h2>
+  <div id="hook"></div>
+  <h2>Suggested cuts</h2>
+  <div class="filters" id="filters"></div>
+  <div id="cuts"></div>
+  <h2>Clips</h2>
+  <div id="clips"></div>
+  <h2>Stat cards</h2>
+  <div id="stats"></div>
+</div></main>
+<footer><div class="wrap">
+  <button class="primary" id="copy">Copy my choices</button>
+  <button id="save">Download plan.json</button>
+  <span id="msg">Paste your choices into the chat, or save plan.json over the old one.</span>
+</div></footer>
+<script>
+const P = /*PLAN*/null;
+const v = document.getElementById("v");
+v.src = P.video_url;
+document.getElementById("title").textContent = "Edit review: " + P.video.split(/[\\/]/).pop();
+const fmt = t => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let stopAt = null, skip = null;
+v.addEventListener("timeupdate", () => {
+  if (skip && v.currentTime >= skip[0] && v.currentTime < skip[1]) v.currentTime = skip[1];
+  if (stopAt !== null && v.currentTime >= stopAt) { v.pause(); stopAt = null; skip = null; }
+});
+function play(s, e, cut) { skip = cut || null; stopAt = e; v.currentTime = Math.max(0, s); v.play(); }
+
+function summary() {
+  const on = P.cuts.filter(c => c.accept);
+  const saved = on.reduce((n, c) => n + c.e - c.s, 0);
+  document.getElementById("summary").textContent =
+    `${on.length} of ${P.cuts.length} cuts accepted, saving ${Math.floor(saved / 60)}m ${Math.round(saved % 60)}s. ${P.clips.length} clips.`;
+}
+
+const sp = document.getElementById("speakers");
+for (const [id, who] of Object.entries(P.speakers)) {
+  const d = document.createElement("div"); d.className = "item";
+  d.innerHTML = `<div class="row"><b>Speaker ${id}</b><button>Hear them</button>
+    <input type="text" placeholder="Name" value="${esc(who.name)}"><input type="text" placeholder="Job or role" value="${esc(who.role)}"></div>`;
+  const [n, r] = d.querySelectorAll("input");
+  n.oninput = () => who.name = n.value; r.oninput = () => who.role = r.value;
+  const smp = P.samples[id];
+  d.querySelector("button").onclick = () => smp && play(smp[0], smp[0] + 5);
+  sp.appendChild(d);
+}
+
+const hk = document.getElementById("hook");
+if (P.hook) {
+  hk.innerHTML = `<div class="item"><div class="row"><span class="time">${fmt(P.hook.s)} to ${fmt(P.hook.e)}</span><button>Play hook</button></div>
+    <div class="text">${esc(P.hook.text)}</div>${P.hook.note ? `<div class="ctx">${esc(P.hook.note)}</div>` : ""}</div>`;
+  hk.querySelector("button").onclick = () => play(P.hook.s, P.hook.e);
+} else hk.innerHTML = `<div class="ctx">No hook picked yet.</div>`;
+
+const kinds = { all: "All", edit: "Editorial", pause: "Pauses", filler: "Fillers", repeat: "Stutters" };
+let filter = "all";
+const fl = document.getElementById("filters");
+for (const [k, label] of Object.entries(kinds)) {
+  const b = document.createElement("button"); b.textContent = label; b.dataset.k = k;
+  b.onclick = () => { filter = k; drawCuts(); }; fl.appendChild(b);
+}
+function drawCuts() {
+  fl.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.k === filter));
+  const box = document.getElementById("cuts"); box.innerHTML = "";
+  const list = P.cuts.filter(c => filter === "all" || c.kind === filter || (filter === "edit" && !["pause", "filler", "repeat"].includes(c.kind)));
+  // editorial suggestions first: they are the ones that need a person's judgement
+  list.sort((a, b) => ((a.kind === "edit" ? 0 : 1) - (b.kind === "edit" ? 0 : 1)) || a.s - b.s);
+  for (const c of list) {
+    const d = document.createElement("div"); d.className = "item" + (c.accept ? "" : " off");
+    d.innerHTML = `<div class="row"><b>#${c.id}</b><span class="tag ${c.kind === "edit" ? "edit" : ""}">${esc(c.kind)}</span>
+      <span class="time">${fmt(c.s)} (${(c.e - c.s).toFixed(1)}s)</span><button data-a="with">Hear it</button><button data-a="without">Hear it cut</button>
+      <label class="toggle"><input type="checkbox" ${c.accept ? "checked" : ""}> Cut it</label></div>
+      ${c.note ? `<div class="text">${esc(c.note)}</div>` : ""}
+      <div class="text"><span class="ctx">${esc(c.ctx[0])}</span> <s>${esc(c.text) || "(silence)"}</s> <span class="ctx">${esc(c.ctx[1])}</span></div>`;
+    d.querySelector('[data-a="with"]').onclick = () => play(c.s - 3, c.e + 2);
+    d.querySelector('[data-a="without"]').onclick = () => play(c.s - 3, c.e + 2, [c.s, c.e]);
+    d.querySelector("input").onchange = e => { c.accept = e.target.checked; d.classList.toggle("off", !c.accept); summary(); };
+    box.appendChild(d);
+  }
+}
+drawCuts();
+
+const cl = document.getElementById("clips");
+if (!P.clips.length) cl.innerHTML = `<div class="ctx">No clips picked yet.</div>`;
+for (const c of P.clips) {
+  const d = document.createElement("div"); d.className = "item";
+  d.innerHTML = `<div class="row"><b>Clip ${c.id}</b><span>${esc(c.title)}</span><span class="time">${fmt(c.s)} (${Math.round(c.e - c.s)}s)</span>
+    <button>Play</button><label class="toggle"><input type="checkbox" ${c.skip ? "" : "checked"}> Make it</label></div>
+    ${c.note ? `<div class="ctx">${esc(c.note)}</div>` : ""}<div class="text">${esc(c.text)}</div>`;
+  d.querySelector("button").onclick = () => play(c.s, c.e);
+  d.querySelector("input").onchange = e => c.skip = !e.target.checked;
+  cl.appendChild(d);
+}
+
+const stt = document.getElementById("stats");
+if (!(P.stats || []).length) stt.innerHTML = `<div class="ctx">No stat cards suggested yet.</div>`;
+for (const s of P.stats || []) {
+  const d = document.createElement("div"); d.className = "item";
+  d.innerHTML = `<div class="row"><span class="time">${fmt(s.s)}</span><button>Play</button><input type="text" value="${esc(s.text)}"><input type="text" value="${esc(s.sub)}" placeholder="Small print"></div>`;
+  const [t, sub] = d.querySelectorAll("input");
+  t.oninput = () => s.text = t.value; sub.oninput = () => s.sub = sub.value;
+  d.querySelector("button").onclick = () => play(s.s - 2, s.e + 1);
+  stt.appendChild(d);
+}
+
+function cleanPlan() {
+  const out = JSON.parse(JSON.stringify(P));
+  for (const k of ["samples", "video_url"]) delete out[k];
+  out.cuts.forEach(c => { delete c.text; delete c.ctx; });
+  out.clips.forEach(c => delete c.text);
+  if (out.hook) delete out.hook.text;
+  return out;
+}
+document.getElementById("save").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(cleanPlan(), null, 1)], { type: "application/json" }));
+  a.download = "plan.json"; a.click();
+};
+document.getElementById("copy").onclick = async () => {
+  const ed = P.cuts.filter(c => !["pause", "filler", "repeat"].includes(c.kind));
+  const auto = P.cuts.filter(c => ["pause", "filler", "repeat"].includes(c.kind));
+  const ids = l => l.map(c => c.id).join(", ") || "none";
+  const lines = [
+    "Speakers: " + Object.entries(P.speakers).map(([k, w]) => `${k} = ${w.name || "?"}${w.role ? " (" + w.role + ")" : ""}`).join("; "),
+    "Editorial cuts to make: " + ids(ed.filter(c => c.accept)),
+    "Editorial cuts to ignore: " + ids(ed.filter(c => !c.accept)),
+    "Automatic cuts to ignore: " + ids(auto.filter(c => !c.accept)),
+    "Clips to skip: " + (P.clips.filter(c => c.skip).map(c => c.id).join(", ") || "none"),
+    ...(P.stats || []).map((s, i) => `Stat ${i + 1}: ${s.text}${s.sub ? " / " + s.sub : ""}`),
+  ];
+  try { await navigator.clipboard.writeText(lines.join("\n")); document.getElementById("msg").textContent = "Copied. Paste it into the chat."; }
+  catch { prompt("Copy this into the chat:", lines.join(" | ")); }
+};
+summary();
+</script>
+</body>
+</html>
