@@ -10,10 +10,15 @@ a branded background and word-highlighted Manrope captions.
 Branding lives in brand.json. Words can come from any source: render only needs
 a JSON list of {"w": "word", "s": start_seconds, "e": end_seconds}.
 """
-import argparse, difflib, io, json, re, subprocess, sys, wave
+import argparse, difflib, io, json, os, re, subprocess, sys, wave
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+# Homebrew's ffmpeg-full has libass for captions and is not on PATH by default
+for _d in ("/opt/homebrew/opt/ffmpeg-full/bin", "/usr/local/opt/ffmpeg-full/bin"):
+    if Path(_d).is_dir():
+        os.environ["PATH"] = _d + os.pathsep + os.environ["PATH"]
+        break
 
 
 def sh(cmd, **kw):
