@@ -78,13 +78,14 @@
       "captions": {
         "size": 66,
         "max_chars": 34,
-        "shadow": 3
+        "shadow": 3,
+        "outline": 3
       },
       "logo": {
-        "width": 220
+        "width": 150
       },
       "logo_x": "W-w-56",
-      "logo_center_y": 80,
+      "logo_center_y": 125,
       "captions_center_y": 950
     }
   },

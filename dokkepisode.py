@@ -362,10 +362,13 @@ def lower_thirds(plan, turns, fwd, secs, after):
         for t in turns:
             if str(t["spk"]) == spk and t["e"] - t["s"] >= min(secs, 3):
                 s = fwd(t["s"] + 0.5)
+                late = fwd(t["e"] - 3)
+                if s is not None and late is not None and s < after <= late:
+                    s = after  # their turn runs on past the hook: show the card as the episode starts
                 if s is not None and s >= after:
                     out.append({"s": s, "e": s + secs, "title": who["name"], "sub": who.get("role", "")})
                     break
-    return out
+    return sorted(out, key=lambda c: c["s"])
 
 
 def render_episode(name, brand):
