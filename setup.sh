@@ -12,6 +12,8 @@ if ! grep -q " subtitles " <<<"$filters"; then
   if command -v brew >/dev/null; then brew install ffmpeg-full
   else echo "your ffmpeg can't draw captions (no libass); install one that can"; exit 1; fi
 fi
+# the logo is drawn with cairo
+if command -v brew >/dev/null && ! brew list cairo >/dev/null 2>&1; then brew install cairo; fi
 [ -d .venv ] || python3 -m venv .venv
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q -r requirements.txt

@@ -19,6 +19,10 @@ for _d in ("/opt/homebrew/opt/ffmpeg-full/bin", "/usr/local/opt/ffmpeg-full/bin"
     if Path(_d).is_dir():
         os.environ["PATH"] = _d + os.pathsep + os.environ["PATH"]
         break
+# cairosvg looks up libcairo via ctypes, which doesn't search Homebrew's lib folder on Apple Silicon
+if Path("/opt/homebrew/lib").is_dir():
+    os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = os.pathsep.join(
+        filter(None, [os.environ.get("DYLD_FALLBACK_LIBRARY_PATH"), "/opt/homebrew/lib", "/usr/local/lib", "/usr/lib"]))
 
 
 def sh(cmd, **kw):
