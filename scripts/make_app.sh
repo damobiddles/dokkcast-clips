@@ -33,8 +33,11 @@ PLIST
 
 # icon from the logo
 tmp="$(mktemp -d)"; set="$tmp/icon.iconset"; mkdir "$set"
-"$REPO/.venv/bin/python" - "$REPO/assets/logo/udokk_logo_gradient.svg" "$tmp/logo.png" <<'PY'
-import sys, cairosvg
+"$REPO/.venv/bin/python" - "$REPO/assets/logo/udokk_logo_gradient.svg" "$tmp/logo.png" "$REPO" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[3])
+import dokkclip  # noqa: F401  (points cairo at Homebrew's library on Apple Silicon)
+import cairosvg
 from PIL import Image
 cairosvg.svg2png(url=sys.argv[1], write_to=sys.argv[2], output_width=820)
 logo = Image.open(sys.argv[2]).convert("RGBA")
