@@ -91,9 +91,11 @@ all of them if none are approved yet.
 
 1. `python dokkepisode.py prep ~/Movies/Dokkcast/<Guest>.mp4`: transcript in output/<Guest>/.
 2. Claude picks the clips (`dokkepisode.py suggest`) and writes `output/<Guest>/copy.json`.
-3. `python dokkpost.py plan <Guest> --start <date>` opens the review page: each clip plays from the
-   episode before it's rendered, with its titles, captions, hashtags and date. Tick Approve, edit, then
-   Save my choices and run `python dokkpost.py apply <Guest> ~/Downloads/posts.json`.
-4. `python dokkpost.py finish <Guest> --music ~/Movies/Dokkcast/<track>.wav`: renders only the approved
-   clips with the music low underneath (`clips.music` in brand.json: -26 dB and ducked under speech,
-   each clip starting at a different point in the track), makes the cover graphics, the kit and the zip.
+3. `python dokkpost.py plan <Guest> --start <date>`, then
+   `python dokkpost.py review <Guest> --music ~/Movies/Dokkcast/<track>.wav` writes the review page: each
+   clip plays from the episode before it's rendered, with the track underneath and a Music slider to set
+   the mix by ear, plus its titles, captions, hashtags and date. Tick Approve, edit, then Save my choices
+   and run `python dokkpost.py apply <Guest> ~/Downloads/posts.json` (this also keeps the music level).
+4. `python dokkpost.py finish <Guest>`: renders only the approved clips with the music underneath at the
+   saved level (default `clips.music` in brand.json, lightly ducked under speech, each clip starting at a
+   different point in the track), makes the cover graphics, the kit and the zip.

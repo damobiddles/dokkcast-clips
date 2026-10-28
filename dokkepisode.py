@@ -454,6 +454,8 @@ def render_clips(name, brand, only_id=None):
     turns = json.loads((wd / "turns.json").read_text())
     # music under the clips: plan.json "music" (set with render --music) or the episode track, quieter than on the episode
     mcfg = dict(cfg["music"], **brand["clips"].get("music", {}))
+    if plan.get("music_db") is not None:  # the level picked with the slider on posts.html
+        mcfg["level_db"] = plan["music_db"]
     x = None
     for n, clip in enumerate(plan.get("clips", [])):
         if (only_id and clip["id"] != only_id) or (not only_id and clip.get("skip")):

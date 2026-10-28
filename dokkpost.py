@@ -4,6 +4,7 @@
     python dokkpost.py plan Marcela                 # posts.json from the clips + copy.json, one clip per weekday
     python dokkpost.py plan Marcela --start 2026-11-02 --time 12:00 --days mon,wed,fri
     python dokkpost.py review Marcela               # writes output/Marcela/posts.html to tick clips and edit copy
+    python dokkpost.py review Marcela --music ~/Movies/Dokkcast/track.wav   # same, with a music slider to set the mix
     python dokkpost.py apply Marcela ~/Downloads/posts.json   # take the choices saved from posts.html
     python dokkpost.py kit Marcela                  # posting kit to upload by hand: output/Marcela/kit/
     python dokkpost.py zip Marcela                  # the kit as ~/Movies/Dokkcast/Dokkcast posts - <guest>.zip
@@ -21,6 +22,10 @@ Posts already sent are remembered in posts.json, so running schedule again only 
 The review page works before the clips are rendered too: until a clip file exists it plays that
 stretch of the episode instead. Clips left unapproved are marked skip in plan.json by apply, so
 finish only renders the approved ones.
+
+With a music track (review --music, or one already given to render/finish) the review page gets a
+music slider: it plays the episode with the track underneath at that level, and the level saved
+from the page is what the clips are rendered with (plan.json "music_db").
 
 Copy lives in output/<name>/copy.json, written alongside the clips:
 
@@ -89,21 +94,58 @@ def plan(name, brand, start=None, at=None, days=None):
 
 
 # ---------------------------------------------------------------------- review
-def review(name, brand):
+def loudness(path):
+    """Integrated loudness (LUFS) of a file's audio."""
+    r = subprocess.run(["ffmpeg", "-nostats", "-i", str(path), "-vn", "-af", "ebur128", "-f", "null", "-"],
+                       capture_output=True, text=True)
+    m = re.findall(r"I:\s+(-?[\d.]+) LUFS", r.stderr)
+    return float(m[-1]) if m else -16.0
+
+
+def music_preview(wd, ep):
+    """The track at the episode's own loudness, so the page's slider sets music against voice in dB
+    the same way the render does (both are normalised to the same level there)."""
+    out = wd / "music-preview.m4a"
+    key = f"{ep['music']}|{ep.get('voice_lufs')}"
+    if not out.exists() or ep.get("music_preview") != key:
+        if ep.get("voice_lufs") is None:
+            print("measuring the episode's loudness for the music preview ...")
+            ep["voice_lufs"] = loudness(ep["video"])
+            key = f"{ep['music']}|{ep['voice_lufs']}"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", ep["music"], "-vn", "-ac", "1", "-af",
+                        f"loudnorm=I={ep['voice_lufs']:.1f}:TP=-2", "-c:a", "aac", "-b:a", "96k", str(out)], check=True)
+        ep["music_preview"] = key
+        (wd / "plan.json").write_text(json.dumps(ep, indent=1))
+    return out.name
+
+
+def review(name, brand, music=None):
     wd = work_dir(name)
     data = json.loads((wd / "posts.json").read_text())
     ep = load_plan(wd)
-    spans = {c["id"]: (c["s"], c["e"]) for c in ep.get("clips", [])}
+    if music:
+        ep["music"] = str(Path(music).expanduser().resolve())
+        (wd / "plan.json").write_text(json.dumps(ep, indent=1))
+    clips = ep.get("clips", [])
+    spans = {c["id"]: (c["s"], c["e"]) for c in clips}
+    mcfg = dict(brand["episode"]["music"], **brand["clips"].get("music", {}))
     for p in data["posts"]:
         p["files"] = {}
+        if p["clip"] in spans:  # that stretch of the episode, for the music preview and unrendered clips
+            s, e = spans[p["clip"]]
+            p["src"] = f"{Path(ep['video']).as_uri()}#t={s:.1f},{e:.1f}"
+            # where in the track this clip's music starts, as render_clips does it
+            p["music_at"] = [c["id"] for c in clips].index(p["clip"]) * mcfg.get("offset_step", 30)
         for pl, shape in brand["social"]["shapes"].items():
             f = wd / "clips" / f"{name}_clip{p['clip']}_{shape}.mp4"
             if f.exists():
                 p["files"][pl] = f.as_uri()
-            elif p["clip"] in spans:  # not rendered yet: play that stretch of the episode
-                s, e = spans[p["clip"]]
-                p["files"][pl] = f"{Path(ep['video']).as_uri()}#t={s:.1f},{e:.1f}"
+            elif "src" in p:  # not rendered yet: play that stretch of the episode
+                p["files"][pl] = p["src"]
     data["shapes"] = brand["social"]["shapes"]
+    if ep.get("music") and Path(ep["music"]).exists() and mcfg.get("on", True):
+        data["music"] = {"src": music_preview(wd, ep), "name": Path(ep["music"]).stem,
+                         "db": ep["music_db"] if ep.get("music_db") is not None else mcfg["level_db"]}
     html = (ROOT / "assets" / "posts.html").read_text().replace("/*POSTS*/null", json.dumps(data))
     (wd / "posts.html").write_text(html)
     print(f"open {wd / 'posts.html'} in a browser")
@@ -120,13 +162,17 @@ def apply(name, brand, path):
             p.update({k: n[k] for k in ("when", "platforms", "copy", "approved") if k in n})
     (wd / "posts.json").write_text(json.dumps(cur, indent=1))
     ok = [p for p in cur["posts"] if p["approved"]]
+    pj = wd / "plan.json"
+    ep = json.loads(pj.read_text())
     if ok:  # only the approved clips get rendered
-        pj = wd / "plan.json"
-        ep = json.loads(pj.read_text())
         keep = {p["clip"] for p in ok}
         for c in ep.get("clips", []):
             c["skip"] = c["id"] not in keep
-        pj.write_text(json.dumps(ep, indent=1))
+    saved = json.loads(Path(path).expanduser().read_text()).get("music_db")
+    if saved is not None:
+        ep["music_db"] = saved
+        print(f"music level {saved} dB")
+    pj.write_text(json.dumps(ep, indent=1))
     print(f"{len(ok)} of {len(cur['posts'])} posts approved: clips {', '.join(str(p['clip']) for p in ok) or 'none'}")
     review(name, brand)
 
@@ -274,7 +320,7 @@ def main():
     p.add_argument("--start", help="plan: first posting day, YYYY-MM-DD (default tomorrow)")
     p.add_argument("--time", help="plan: posting time, HH:MM in the social.tz time zone")
     p.add_argument("--days", help="plan: posting days, e.g. mon,wed,fri")
-    p.add_argument("--music", help="finish: music file to put under the clips")
+    p.add_argument("--music", help="review, finish: music file to put under the clips")
     p.add_argument("--title", help="zip, finish: name in the zip file, e.g. \"Marcela Fiuza (GLP-1)\"")
     p.add_argument("--go", action="store_true", help="schedule: really upload and schedule")
     p.add_argument("--brand", default=str(ROOT / "brand.json"))
@@ -286,7 +332,7 @@ def main():
     if a.command == "plan":
         plan(name, brand, a.start, a.time, a.days)
     elif a.command == "review":
-        review(name, brand)
+        review(name, brand, a.music)
     elif a.command == "apply":
         apply(name, brand, a.file)
     elif a.command == "kit":
