@@ -249,6 +249,11 @@ def mapper(segs, offset=0.0):
     return f
 
 
+def kept_pieces(s, e, segs):
+    """The parts of original span s..e that survive the cuts, as (a, b) in original time."""
+    return [(max(s, a), min(e, b)) for a, b in segs if min(e, b) > max(s, a)]
+
+
 def load_audio48(video):
     import numpy as np
     raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(video), "-vn", "-ac", "1", "-ar", str(SR),
@@ -471,16 +476,23 @@ def render_clips(name, brand, only_id=None):
         src = src.with_suffix(".mov")
         cw = []
         for w in words:
-            s = fwd(w["s"])
-            if s is not None:
-                cw.append({"w": w["w"], "s": round(s, 3), "e": round(fwd(w["e"]) or s + 0.3, 3)})
+            # a word straddling a join keeps only its surviving piece; mostly-cut words are dropped so they don't flash
+            ps = kept_pieces(w["s"], w["e"], segs)
+            if not ps or sum(b - a for a, b in ps) < 0.5 * max(w["e"] - w["s"], 0.01):
+                continue
+            a, b = max(ps, key=lambda q: q[1] - q[0])
+            cw.append({"w": w["w"], "s": round(fwd(a), 3), "e": round(fwd(b), 3)})
         cw = dokkclip.fix_ends(fix_names(cw, cfg["spellings"]), dur)
         (cdir / f"{stem}.words.json").write_text(json.dumps(cw, indent=1))
         ct = []
         for t in turns:
-            a, b = fwd(max(t["s"], clip["s"])), fwd(min(t["e"], clip["e"]))
-            if t["e"] > clip["s"] and t["s"] < clip["e"] and a is not None and b is not None and b > a:
-                ct.append({"s": round(a, 2), "e": round(b, 2), "spk": t["spk"]})
+            # map each surviving piece, so a turn whose start or end was cut still steers the camera
+            for a, b in kept_pieces(t["s"], t["e"], segs):
+                a, b = round(fwd(a), 2), round(fwd(b), 2)
+                if ct and ct[-1]["spk"] == t["spk"] and a - ct[-1]["e"] < 0.05:
+                    ct[-1]["e"] = b
+                elif b > a:
+                    ct.append({"s": a, "e": b, "spk": t["spk"]})
         (cdir / f"{stem}.turns.json").write_text(json.dumps(ct or [{"s": 0, "e": dur, "spk": 0}], indent=1))
         for shape, layout in brand["clips"]["formats"].items():
             if layout == "speaker" and len({t["spk"] for t in ct}) < 2:
