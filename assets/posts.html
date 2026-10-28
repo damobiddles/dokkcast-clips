@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dokkcast posts</title>
+<style>
+  :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --ok: #7be0a6; --warn: #ff8a8a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0; }
+  .summary { color: var(--dim); font-size: 13px; margin-top: 4px; }
+  main { padding: 0 16px 90px; }
+  .post { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 14px 0; display: grid; grid-template-columns: 200px 1fr; gap: 14px; }
+  .post.off { opacity: .6; }
+  .post.ok { border-color: var(--ok); }
+  @media (max-width: 640px) { .post { grid-template-columns: 1fr; } }
+  video { width: 100%; aspect-ratio: 9 / 16; background: #000; border-radius: 8px; object-fit: contain; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .head b { font-size: 16px; }
+  label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  label.approve { margin-left: auto; font-weight: 600; }
+  .pl { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
+  .pl.off textarea, .pl.off input[type=text] { opacity: .45; }
+  .tag { font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--dim); }
+  .tag.sent { border-color: var(--ok); color: var(--ok); }
+  .count { color: var(--dim); font-size: 12px; margin-left: auto; font-variant-numeric: tabular-nums; }
+  .count.over { color: var(--warn); }
+  textarea, input[type=text], input[type=datetime-local] { width: 100%; background: #0d1233; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 14px; }
+  input[type=datetime-local] { width: auto; color-scheme: dark; }
+  textarea { min-height: 84px; resize: vertical; margin-top: 6px; }
+  input[type=text] { margin-top: 6px; }
+  button { background: #222a5c; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  button:hover { border-color: var(--hi); }
+  button.primary { background: var(--hi); color: #0A0F2C; border: 0; font-weight: 600; padding: 8px 14px; }
+  footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 16px; }
+  footer .wrap { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #msg { color: var(--dim); font-size: 13px; }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1 id="title">Posts</h1>
+  <div class="summary" id="summary"></div>
+</div></header>
+<main><div class="wrap" id="posts"></div></main>
+<footer><div class="wrap">
+  <button class="primary" id="save">Save my choices</button>
+  <button id="all">Approve all</button>
+  <span id="msg">Saves posts.json to Downloads. Nothing is posted until you've approved it here.</span>
+</div></footer>
+<script>
+const D = /*POSTS*/null;
+const NAMES = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube Shorts", linkedin: "LinkedIn" };
+const LIMIT = { tiktok: 2200, instagram: 2200, youtube: 5000, linkedin: 3000, youtube_title: 100 };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+document.getElementById("title").textContent = "Posts: " + D.episode;
+
+function summary() {
+  const ok = D.posts.filter(p => p.approved);
+  const n = ok.reduce((k, p) => k + Object.values(p.platforms).filter(Boolean).length, 0);
+  document.getElementById("summary").textContent =
+    `${ok.length} of ${D.posts.length} clips approved (${n} posts). Times are ${D.tz}.`;
+}
+
+function counter(el, box, limit) {
+  const f = () => { box.textContent = `${el.value.length} / ${limit}`; box.classList.toggle("over", el.value.length > limit); };
+  el.addEventListener("input", f); f();
+}
+
+const list = document.getElementById("posts");
+function draw() {
+  list.innerHTML = "";
+  for (const p of D.posts) {
+    const sent = p.sent || {};
+    const d = document.createElement("div");
+    d.className = "post" + (p.approved ? " ok" : " off");
+    const first = Object.keys(p.platforms)[0];
+    d.innerHTML = `<div><video controls preload="metadata" src="${esc(p.files[first])}"></video>
+        <div class="row" style="margin-top:6px">${[...new Set(Object.values(D.shapes))].map(s =>
+          `<button data-shape="${s}">${s}</button>`).join("")}</div></div>
+      <div><div class="row head"><b>Clip ${p.clip}</b><span>${esc(p.title)}</span>
+        <label class="approve"><input type="checkbox" class="ap" ${p.approved ? "checked" : ""}> Approve</label></div>
+        <div class="row" style="margin-top:6px"><span class="tag">Goes out</span>
+          <input type="datetime-local" class="when" value="${esc(p.when.replace(" ", "T"))}"></div>
+        <div class="pls"></div></div>`;
+    const v = d.querySelector("video");
+    d.querySelectorAll("[data-shape]").forEach(b => b.onclick = () => {
+      const pl = Object.keys(D.shapes).find(k => D.shapes[k] === b.dataset.shape); v.src = p.files[pl];
+    });
+    d.querySelector(".ap").onchange = e => { p.approved = e.target.checked; d.className = "post" + (p.approved ? " ok" : " off"); summary(); };
+    d.querySelector(".when").onchange = e => p.when = e.target.value.replace("T", " ");
+    const pls = d.querySelector(".pls");
+    for (const pl of Object.keys(p.platforms)) {
+      const r = document.createElement("div");
+      r.className = "pl" + (p.platforms[pl] ? "" : " off");
+      const isSent = !!sent[pl];
+      r.innerHTML = `<div class="row"><label><input type="checkbox" ${p.platforms[pl] ? "checked" : ""} ${isSent ? "disabled" : ""}> ${NAMES[pl] || pl}</label>
+          <span class="tag">${esc(D.shapes[pl])}</span>${isSent ? `<span class="tag sent">scheduled</span>` : ""}<span class="count"></span></div>
+        ${pl === "youtube" ? `<input type="text" class="yt" placeholder="Video title" value="${esc(p.copy.youtube_title)}">` : ""}
+        <textarea ${isSent ? "disabled" : ""}>${esc(p.copy[pl])}</textarea>`;
+      r.querySelector("input[type=checkbox]").onchange = e => { p.platforms[pl] = e.target.checked; r.classList.toggle("off", !e.target.checked); summary(); };
+      const t = r.querySelector("textarea");
+      t.oninput = () => p.copy[pl] = t.value;
+      counter(t, r.querySelector(".count"), LIMIT[pl] || 2200);
+      const yt = r.querySelector(".yt");
+      if (yt) { yt.oninput = () => p.copy.youtube_title = yt.value; yt.disabled = isSent; }
+      pls.appendChild(r);
+    }
+    list.appendChild(d);
+  }
+  summary();
+}
+draw();
+
+document.getElementById("all").onclick = () => { D.posts.forEach(p => p.approved = true); draw(); };
+document.getElementById("save").onclick = () => {
+  const out = JSON.parse(JSON.stringify(D));
+  delete out.shapes; out.posts.forEach(p => delete p.files);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: "application/json" }));
+  a.download = "posts.json"; a.click();
+  document.getElementById("msg").textContent = "Saved posts.json to Downloads. Tell me in the chat when you're done.";
+};
+</script>
+</body>
+</html>

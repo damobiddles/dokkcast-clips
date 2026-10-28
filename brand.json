@@ -141,5 +141,42 @@
       "guiney": "gynae",
       "gynic": "gynae"
     }
+  },
+  "social": {
+    "platforms": [
+      "tiktok",
+      "instagram",
+      "youtube",
+      "linkedin"
+    ],
+    "shapes": {
+      "tiktok": "portrait",
+      "instagram": "portrait",
+      "youtube": "portrait",
+      "linkedin": "square"
+    },
+    "tz": "Europe/London",
+    "time": "12:00",
+    "days": "mon,tue,wed,thu,fri",
+    "channels": {},
+    "settings": {
+      "tiktok": {
+        "privacy_level": "PUBLIC_TO_EVERYONE",
+        "content_posting_method": "DIRECT_POST",
+        "duet": false,
+        "stitch": false,
+        "comment": true,
+        "autoAddMusic": "no",
+        "brand_content_toggle": false,
+        "brand_organic_toggle": false
+      },
+      "instagram": {
+        "post_type": "post"
+      },
+      "youtube": {
+        "type": "public"
+      },
+      "linkedin": {}
+    }
   }
 }

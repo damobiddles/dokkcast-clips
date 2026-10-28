@@ -64,3 +64,20 @@ highlight colour, caption position. Fonts are Manrope (SIL OFL, see `assets/font
 
 The cuts, audio chain, music level and spellings of names the recogniser mishears are in the
 `episode` section of `brand.json`. The video never leaves the machine it is on.
+
+## Posting to socials
+
+`dokkpost.py` schedules finished clips to TikTok, Instagram, YouTube Shorts and LinkedIn through
+[Postiz](https://postiz.com), with an approval step first. One-off setup: connect the accounts in
+Postiz, then `npm install -g postiz` and `postiz auth:login`.
+
+```
+python dokkpost.py plan Marcela        # posts.json from the clips and output/Marcela/copy.json
+python dokkpost.py review Marcela      # posts.html: tick clips, edit copy and dates, save choices
+python dokkpost.py apply Marcela ~/Downloads/posts.json
+python dokkpost.py schedule Marcela    # dry run
+python dokkpost.py schedule Marcela --go
+```
+
+Nothing goes to Postiz unless it is approved and `--go` is given. Shapes per platform, time zone,
+posting days and Postiz settings are under `social` in `brand.json`.
