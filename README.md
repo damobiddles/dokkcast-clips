@@ -97,8 +97,8 @@ and a music track, type the guest's name and job, and press Start. It transcribe
 edit and approve there, Save, then press **Make the clips** for the clips, covers, kit and zip.
 Progress is kept per episode, so the app can be closed and reopened at any point.
 
-The app's own name, logo, icon, fonts and colours are in brand.json under `studio` (MBMS Podcast
-Studio); the clips, covers and kit keep the show's branding from the rest of brand.json. The MBMS
+The app's own name, logo, icon, fonts and colours are in brand.json under `studio` (Offcuts, by MBMS
+Podcast Studio); the clips, covers and kit keep the show's branding from the rest of brand.json. The MBMS
 logo and icon files go in `assets/studio/` (from the MBMS brand kit; not kept in git). Run
 `scripts/make_app.sh` again after changing them.
 
