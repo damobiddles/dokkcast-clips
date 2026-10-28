@@ -86,3 +86,14 @@ To post by hand instead, `python dokkpost.py kit Marcela` needs no Postiz. It wr
 `output/Marcela/kit/`: a folder per post with each platform's video and caption, and `kit.html`
 with copy buttons, upload links and a done tick for each platform. It uses the approved posts, or
 all of them if none are approved yet.
+
+### One episode, start to finish
+
+1. `python dokkepisode.py prep ~/Movies/Dokkcast/<Guest>.mp4`: transcript in output/<Guest>/.
+2. Claude picks the clips (`dokkepisode.py suggest`) and writes `output/<Guest>/copy.json`.
+3. `python dokkpost.py plan <Guest> --start <date>` opens the review page: each clip plays from the
+   episode before it's rendered, with its titles, captions, hashtags and date. Tick Approve, edit, then
+   Save my choices and run `python dokkpost.py apply <Guest> ~/Downloads/posts.json`.
+4. `python dokkpost.py finish <Guest> --music ~/Movies/Dokkcast/<track>.wav`: renders only the approved
+   clips with the music low underneath (`clips.music` in brand.json: -26 dB and ducked under speech,
+   each clip starting at a different point in the track), makes the cover graphics, the kit and the zip.

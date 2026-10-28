@@ -94,6 +94,12 @@
       "portrait": "speaker",
       "square": "square",
       "landscape": "landscape"
+    },
+    "music": {
+      "on": true,
+      "level_db": -26,
+      "fade": 1.0,
+      "offset_step": 30
     }
   },
   "episode": {

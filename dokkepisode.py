@@ -289,16 +289,21 @@ def video_trim(segs, fps):
     return f"select='{expr}',setpts=N/({fps})/TB"
 
 
-def music_track(cfg, dur, beds, work):
-    """A music bed of length dur, audible only inside beds [(s, e)], or None if no music is set up."""
+def music_track(cfg, dur, beds, work, track=None, offset=0.0):
+    """A music bed of length dur, audible only inside beds [(s, e)], or None if no music is set up.
+    track overrides the first file in cfg["dir"]; offset starts that far into the track."""
     mdir = ROOT / cfg["dir"]
-    tracks = sorted(p for p in mdir.glob("*") if p.suffix.lower() in (".mp3", ".wav", ".m4a", ".aac", ".flac")) if mdir.exists() else []
-    if not tracks or not beds:
+    tracks = [Path(track).expanduser()] if track else (
+        sorted(p for p in mdir.glob("*") if p.suffix.lower() in (".mp3", ".wav", ".m4a", ".aac", ".flac")) if mdir.exists() else [])
+    if not tracks or not beds or not tracks[0].exists():
         return None
+    if offset:  # wrap the start point so it always lands inside the track
+        length = float(sh(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(tracks[0])]).stdout)
+        offset %= max(length - 5, 1)
     f = cfg["fade"]
     gain = "+".join(f"clip((t-{s:.2f})/{f},0,1)*clip(({e:.2f}-t)/{f},0,1)" for s, e in beds)
     out = work / "music.wav"
-    sh(["ffmpeg", "-y", "-v", "error", "-stream_loop", "-1", "-i", str(tracks[0]), "-t", f"{dur:.3f}", "-af",
+    sh(["ffmpeg", "-y", "-v", "error", "-stream_loop", "-1", "-ss", f"{offset:.2f}", "-i", str(tracks[0]), "-t", f"{dur:.3f}", "-af",
         f"aresample={SR},pan=mono|c0=0.5*c0+0.5*c1,loudnorm=I=-16:TP=-2,volume={cfg['level_db']}dB,"
         f"volume='min(1,{gain})':eval=frame", "-ac", "1", str(out)])
     return out
@@ -442,8 +447,10 @@ def render_clips(name, brand, only_id=None):
     info = probe(video)
     words = json.loads((wd / "words.json").read_text())
     turns = json.loads((wd / "turns.json").read_text())
+    # music under the clips: plan.json "music" (set with render --music) or the episode track, quieter than on the episode
+    mcfg = dict(cfg["music"], **brand["clips"].get("music", {}))
     x = None
-    for clip in plan.get("clips", []):
+    for n, clip in enumerate(plan.get("clips", [])):
         if (only_id and clip["id"] != only_id) or (not only_id and clip.get("skip")):
             continue
         stem = f"{name}_clip{clip['id']}"
@@ -453,7 +460,10 @@ def render_clips(name, brand, only_id=None):
         if x is None:
             x = load_audio48(video)
         write_wav(splice(x, segs), work / "clip_voice.wav")
-        finish_audio(work / "clip_voice.wav", None, cfg, work / "clip_mix.wav")
+        # each clip starts somewhere else in the track so they don't all open on the same bars
+        music = music_track(mcfg, dur, [(0, dur)], work, plan.get("music"), offset=n * mcfg.get("offset_step", 30)) \
+            if mcfg.get("on", True) else None
+        finish_audio(work / "clip_voice.wav", music, cfg, work / "clip_mix.wav")
         src = work / f"{stem}.mp4"
         sh(["ffmpeg", "-y", "-v", "error", "-i", str(video), "-i", str(work / "clip_mix.wav"), "-filter_complex",
             f"[0:v]{video_trim(segs, info['fps'])}[v]", "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-crf", "14",
@@ -487,6 +497,7 @@ def main():
     p.add_argument("file", nargs="?", help="suggest: JSON with editorial suggestions")
     p.add_argument("--only", choices=["episode", "clips"])
     p.add_argument("--clip", type=int, help="render just this clip id")
+    p.add_argument("--music", help="render: music file to put under the clips (remembered in plan.json)")
     p.add_argument("--speakers", type=int, default=2, help="prep: how many people talk in the episode")
     p.add_argument("--brand", default=str(ROOT / "brand.json"))
     a = p.parse_args()
@@ -501,6 +512,11 @@ def main():
         review(Path(a.target).stem)
     else:
         name = Path(a.target).stem
+        if a.music:
+            pj = work_dir(name) / "plan.json"
+            pl = json.loads(pj.read_text())
+            pl["music"] = str(Path(a.music).expanduser().resolve())
+            pj.write_text(json.dumps(pl, indent=1))
         if a.only != "clips" and not a.clip:
             render_episode(name, brand)
         if a.only != "episode":

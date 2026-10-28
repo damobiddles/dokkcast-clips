@@ -6,6 +6,8 @@
     python dokkpost.py review Marcela               # writes output/Marcela/posts.html to tick clips and edit copy
     python dokkpost.py apply Marcela ~/Downloads/posts.json   # take the choices saved from posts.html
     python dokkpost.py kit Marcela                  # posting kit to upload by hand: output/Marcela/kit/
+    python dokkpost.py zip Marcela                  # the kit as ~/Movies/Dokkcast/Dokkcast posts - <guest>.zip
+    python dokkpost.py finish Marcela --music ~/Movies/Dokkcast/track.wav   # render approved clips, graphics, kit, zip
     python dokkpost.py channels                     # check the Postiz login and list connected accounts
     python dokkpost.py schedule Marcela             # dry run: what would go out, and each channel's rules
     python dokkpost.py schedule Marcela --go        # upload approved clips and schedule them in Postiz
@@ -16,6 +18,10 @@ kit.html with copy buttons and upload links, to post or schedule by hand in each
 Nothing is sent to Postiz unless a post is approved in posts.json and schedule is run with --go.
 Posts already sent are remembered in posts.json, so running schedule again only sends new approvals.
 
+The review page works before the clips are rendered too: until a clip file exists it plays that
+stretch of the episode instead. Clips left unapproved are marked skip in plan.json by apply, so
+finish only renders the approved ones.
+
 Copy lives in output/<name>/copy.json, written alongside the clips:
 
     {"1": {"tiktok": "...", "instagram": "...", "linkedin": "...", "youtube_title": "...", "youtube": "..."}}
@@ -23,12 +29,13 @@ Copy lives in output/<name>/copy.json, written alongside the clips:
 Which clip shape each platform gets, the posting time zone and per-platform Postiz settings are in
 brand.json under "social". Needs the Postiz CLI (npm install -g postiz) and `postiz auth:login`.
 """
-import argparse, json, os, shutil, subprocess, sys
+import argparse, json, os, re, shutil, subprocess, sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from dokkclip import ROOT, load_brand
+from dokkepisode import load_plan
 
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 # Postiz integration identifiers for each platform we post to
@@ -85,9 +92,17 @@ def plan(name, brand, start=None, at=None, days=None):
 def review(name, brand):
     wd = work_dir(name)
     data = json.loads((wd / "posts.json").read_text())
+    ep = load_plan(wd)
+    spans = {c["id"]: (c["s"], c["e"]) for c in ep.get("clips", [])}
     for p in data["posts"]:
-        p["files"] = {pl: (wd / "clips" / f"{name}_clip{p['clip']}_{shape}.mp4").as_uri()
-                      for pl, shape in brand["social"]["shapes"].items()}
+        p["files"] = {}
+        for pl, shape in brand["social"]["shapes"].items():
+            f = wd / "clips" / f"{name}_clip{p['clip']}_{shape}.mp4"
+            if f.exists():
+                p["files"][pl] = f.as_uri()
+            elif p["clip"] in spans:  # not rendered yet: play that stretch of the episode
+                s, e = spans[p["clip"]]
+                p["files"][pl] = f"{Path(ep['video']).as_uri()}#t={s:.1f},{e:.1f}"
     data["shapes"] = brand["social"]["shapes"]
     html = (ROOT / "assets" / "posts.html").read_text().replace("/*POSTS*/null", json.dumps(data))
     (wd / "posts.html").write_text(html)
@@ -105,6 +120,13 @@ def apply(name, brand, path):
             p.update({k: n[k] for k in ("when", "platforms", "copy", "approved") if k in n})
     (wd / "posts.json").write_text(json.dumps(cur, indent=1))
     ok = [p for p in cur["posts"] if p["approved"]]
+    if ok:  # only the approved clips get rendered
+        pj = wd / "plan.json"
+        ep = json.loads(pj.read_text())
+        keep = {p["clip"] for p in ok}
+        for c in ep.get("clips", []):
+            c["skip"] = c["id"] not in keep
+        pj.write_text(json.dumps(ep, indent=1))
     print(f"{len(ok)} of {len(cur['posts'])} posts approved: clips {', '.join(str(p['clip']) for p in ok) or 'none'}")
     review(name, brand)
 
@@ -144,10 +166,48 @@ def kit(name, brand):
             (d / f"{pl}.txt").write_text(cap + "\n")
             text.append(f"== {pl} ==\n{cap}\n")
         (d / "captions.txt").write_text("\n".join(text))
+        for shape in sorted(set(brand["social"]["shapes"].values())):  # cover graphics, if dokkgraphics made them
+            g = wd / "graphics" / f"{name}_clip{p['clip']}_{shape}.png"
+            if g.exists():
+                shutil.copy2(g, d / f"cover {shape}.png")
     data["posts"], data["upload"], data["shapes"] = posts, UPLOAD, brand["social"]["shapes"]
     (out / "kit.html").write_text((ROOT / "assets" / "kit.html").read_text().replace("/*POSTS*/null", json.dumps(data)))
     print(f"{len(posts)} posts{'' if any(p['approved'] for p in posts) else ' (none approved yet, so all of them)'}"
           f" -> {out}\nopen {out / 'kit.html'} in a browser")
+
+
+def make_zip(name, title=None):
+    """The kit as one zip for Slack, with real files (not links) inside."""
+    wd = work_dir(name)
+    if not (wd / "kit" / "kit.html").exists():
+        sys.exit(f"no kit yet: run `dokkpost.py kit {name}` first")
+    if not title:
+        speakers = load_plan(wd).get("speakers", {}).values()
+        guest = next((w["name"] for w in speakers if w.get("name") and "host" not in w.get("role", "").lower()), name)
+        title = re.sub(r"^(Dr|Prof|Professor|Mr|Mrs|Ms|Miss)\.?\s+", "", guest)
+    out = Path("~/Movies/Dokkcast").expanduser()  # where the episode videos live; next to the kit otherwise
+    out = out if out.is_dir() else wd
+    z = out / f"Dokkcast posts - {title}.zip"
+    z.unlink(missing_ok=True)
+    if shutil.which("ditto"):
+        subprocess.run(["ditto", "-c", "-k", "--keepParent", str(wd / "kit"), str(z)], check=True)
+    else:
+        shutil.make_archive(str(z.with_suffix("")), "zip", wd, "kit")
+    print(f"{z} ({z.stat().st_size / 1e6:.0f} MB)")
+    return z
+
+
+def finish(name, brand, music=None, title=None):
+    """After approval: render the approved clips (with music), make graphics, then the kit and the zip."""
+    wd = work_dir(name)
+    cmd = [sys.executable, str(ROOT / "dokkepisode.py"), "render", name, "--only", "clips"]
+    subprocess.run(cmd + (["--music", music] if music else []), check=True)
+    g = ROOT / "dokkgraphics.py"
+    if g.exists():
+        if subprocess.run([sys.executable, str(g), name]).returncode:
+            print("graphics failed; carrying on without covers")
+    kit(name, brand)
+    make_zip(name, title)
 
 
 # -------------------------------------------------------------------- schedule
@@ -208,12 +268,14 @@ def schedule(name, brand, go=False):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["plan", "review", "apply", "kit", "channels", "schedule"])
+    p.add_argument("command", choices=["plan", "review", "apply", "kit", "zip", "finish", "channels", "schedule"])
     p.add_argument("target", nargs="?", help="the episode name (as in output/<name>)")
     p.add_argument("file", nargs="?", help="apply: posts.json saved from posts.html")
     p.add_argument("--start", help="plan: first posting day, YYYY-MM-DD (default tomorrow)")
     p.add_argument("--time", help="plan: posting time, HH:MM in the social.tz time zone")
     p.add_argument("--days", help="plan: posting days, e.g. mon,wed,fri")
+    p.add_argument("--music", help="finish: music file to put under the clips")
+    p.add_argument("--title", help="zip, finish: name in the zip file, e.g. \"Marcela Fiuza (GLP-1)\"")
     p.add_argument("--go", action="store_true", help="schedule: really upload and schedule")
     p.add_argument("--brand", default=str(ROOT / "brand.json"))
     a = p.parse_args()
@@ -229,6 +291,10 @@ def main():
         apply(name, brand, a.file)
     elif a.command == "kit":
         kit(name, brand)
+    elif a.command == "zip":
+        make_zip(name, a.title)
+    elif a.command == "finish":
+        finish(name, brand, a.music, a.title)
     elif a.command == "channels":
         channels(brand)
     else:
