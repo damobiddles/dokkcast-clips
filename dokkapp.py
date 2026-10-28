@@ -225,6 +225,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/choose":
             return {"path": choose(b["kind"])}
         if path == "/api/key":  # kept on this Mac, readable only by this user
+            if not b["key"].strip().startswith("sk-ant-api"):
+                raise ValueError("that isn't an API key: they start sk-ant-api (console.anthropic.com, Settings, API keys)")
             p = Path.home() / ".dokkcast" / "anthropic_key"
             p.parent.mkdir(exist_ok=True)
             p.write_text(b["key"].strip())
