@@ -11,8 +11,9 @@
   header { padding: 18px 16px; border-bottom: 1px solid var(--line); }
   .wrap { max-width: 860px; margin: 0 auto; }
   h1 { font-size: 20px; margin: 0; font-family: var(--head); }
-  .brand { display: flex; gap: 14px; align-items: center; }
-  .brand img { height: 44px; width: auto; max-width: 160px; object-fit: contain; }
+  .brand { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .brand img { height: 96px; width: auto; max-width: 300px; object-fit: contain; }
+  @media (max-width: 600px) { .brand img { height: 64px; } }
   h2 { font-size: 16px; margin: 0 0 10px; font-family: var(--head); }
   .sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
   main { padding: 0 16px 60px; }
