@@ -58,7 +58,10 @@ def run(name, cmd):
     """Run one tool command, streaming its output into the episode's log."""
     log(name, f"\n$ {' '.join(map(str, cmd[1:]))}")
     with open(OUT / name / "app.log", "a") as f:
-        r = subprocess.run(list(map(str, cmd)), cwd=ROOT, stdout=f, stderr=subprocess.STDOUT)
+        r = subprocess.Popen(list(map(str, cmd)), cwd=ROOT, stdout=f, stderr=subprocess.STDOUT)
+        st = load_state(name); st["pid"] = r.pid; save_state(name, st)  # so a restarted app waits for it
+        r.wait()
+    st = load_state(name); st.pop("pid", None); save_state(name, st)
     if r.returncode:  # the tool's last line usually says what went wrong
         last = [l for l in (OUT / name / "app.log").read_text().splitlines() if l.strip()][-1:]
         raise RuntimeError(f"{Path(cmd[1]).name} {cmd[2]} failed: {last[0].strip()[:200] if last else 'see Details'}")
@@ -178,10 +181,29 @@ def find_zip(name, guest):
     return None
 
 
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, TypeError):
+        return False
+
+
 def start(name):
-    if name not in jobs:
+    if name in jobs:
+        return
+    pid = (load_state(name) or {}).get("pid")
+    if alive(pid):  # a step from before the app was restarted is still running: wait for it, don't start it twice
+        def wait():
+            while alive(pid):
+                threading.Event().wait(5)
+            jobs.pop(name, None)
+            st = load_state(name); st.pop("pid", None); save_state(name, st)
+            start(name)
+        jobs[name] = threading.Thread(target=wait, daemon=True)
+    else:
         jobs[name] = threading.Thread(target=advance, args=(name,), daemon=True)
-        jobs[name].start()
+    jobs[name].start()
 
 
 def episodes():
