@@ -97,7 +97,8 @@
     },
     "music": {
       "on": true,
-      "level_db": -18,
+      "level_db": -12,
+      "duck_ratio": 2,
       "fade": 1.0,
       "offset_step": 30
     }

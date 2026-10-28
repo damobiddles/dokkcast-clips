@@ -314,10 +314,10 @@ def music_track(cfg, dur, beds, work, track=None, offset=0.0):
     return out
 
 
-def finish_audio(voice_wav, music_wav, cfg, out):
-    """Clean the voice; duck the music under it."""
+def finish_audio(voice_wav, music_wav, cfg, out, duck=6):
+    """Clean the voice; duck the music under it (duck = compressor ratio, 1 = no ducking)."""
     if music_wav:
-        fc = (f"[0:a]{cfg['audio']},asplit[v][key];[1:a][key]sidechaincompress=threshold=0.02:ratio=6:"
+        fc = (f"[0:a]{cfg['audio']},asplit[v][key];[1:a][key]sidechaincompress=threshold=0.02:ratio={duck}:"
               f"attack=20:release=400[m];[v][m]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[out]")
         sh(["ffmpeg", "-y", "-v", "error", "-i", str(voice_wav), "-i", str(music_wav), "-filter_complex", fc,
             "-map", "[out]", "-ar", str(SR), str(out)])
@@ -468,7 +468,7 @@ def render_clips(name, brand, only_id=None):
         # each clip starts somewhere else in the track so they don't all open on the same bars
         music = music_track(mcfg, dur, [(0, dur)], work, plan.get("music"), offset=n * mcfg.get("offset_step", 30)) \
             if mcfg.get("on", True) else None
-        finish_audio(work / "clip_voice.wav", music, cfg, work / "clip_mix.wav")
+        finish_audio(work / "clip_voice.wav", music, cfg, work / "clip_mix.wav", mcfg.get("duck_ratio", 6))
         src = work / f"{stem}.mp4"
         sh(["ffmpeg", "-y", "-v", "error", "-i", str(video), "-i", str(work / "clip_mix.wav"), "-filter_complex",
             f"[0:v]{video_trim(segs, info['fps'])}[v]", "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-crf", "14",
