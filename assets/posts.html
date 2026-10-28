@@ -131,7 +131,8 @@ function draw() {
         sync(); music.play();
       });
       v.addEventListener("pause", () => mixing && music.pause());
-      v.addEventListener("seeked", () => mixing && sync());
+      // only while this clip plays: loading a clip at its #t= start also fires seeked
+      v.addEventListener("seeked", () => mixing && !v.paused && sync());
     }
     d.querySelector(".ap").onchange = e => { p.approved = e.target.checked; d.className = "post" + (p.approved ? " ok" : " off"); summary(); };
     d.querySelector(".when").onchange = e => p.when = e.target.value.replace("T", " ");
