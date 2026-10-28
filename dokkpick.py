@@ -39,8 +39,8 @@ class Clip(BaseModel):
     tiktok: str = Field(description="TikTok caption with 3-6 hashtags")
     instagram: str = Field(description="Instagram caption with hashtags")
     linkedin: str = Field(description="LinkedIn post, professional, a few short paragraphs, 3-5 hashtags")
-    youtube_title: str = Field(description="YouTube Shorts title, under 90 characters, ends with #Shorts")
-    youtube: str = Field(description="YouTube Shorts description with hashtags")
+    youtube_title: str = Field(description="YouTube Shorts title, under 70 characters, no hashtags")
+    youtube: str = Field(description="YouTube Shorts description with hashtags, including #Shorts")
 
 
 class Picks(BaseModel):
