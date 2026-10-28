@@ -79,7 +79,7 @@ for (const p of D.posts) {
     r.className = "pl" + (done[k] ? " done" : "");
     r.innerHTML = `<div class="row"><span class="name">${NAMES[pl] || pl}</span><span class="tag">${esc(D.shapes[pl])}</span>
         <label><input type="checkbox" ${done[k] ? "checked" : ""}> Done</label></div>
-      <video controls preload="metadata" src="${esc(p.files[pl])}"></video>
+      <video controls preload="metadata" src="${esc(encodeURI(p.files[pl]))}"></video>
       ${pl === "youtube" ? `<div class="cap"><b>${esc(p.copy.youtube_title)}</b></div>` : ""}
       <div class="cap">${esc(p.copy[pl])}</div>
       <div class="row">${pl === "youtube" ? `<button class="t">Copy title</button>` : ""}<button class="c">Copy caption</button>

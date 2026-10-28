@@ -139,7 +139,7 @@ def kit(name, brand):
                 os.link(src, dst)  # no extra disk space
             except OSError:
                 shutil.copy2(src, dst)
-            p["files"][pl] = dst.as_uri()
+            p["files"][pl] = f"{p['dir']}/{pl}.mp4"  # relative, so the kit still works when the folder is moved or synced
             cap = (f"Title: {p['copy'].get('youtube_title', '')}\n\n" if pl == "youtube" else "") + p["copy"][pl]
             (d / f"{pl}.txt").write_text(cap + "\n")
             text.append(f"== {pl} ==\n{cap}\n")
