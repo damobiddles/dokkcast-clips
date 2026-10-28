@@ -87,15 +87,20 @@ To post by hand instead, `python dokkpost.py kit Marcela` needs no Postiz. It wr
 with copy buttons, upload links and a done tick for each platform. It uses the approved posts, or
 all of them if none are approved yet.
 
-### Dokkcast Studio (the app)
+### The studio app
 
 The whole routine below in one window. Once, after `./setup.sh`: `scripts/make_app.sh`, which puts
-**Dokkcast Studio** in ~/Applications (drag it to the Dock). Open it, paste an Anthropic API key
+the app in ~/Applications (drag it to the Dock). Open it, paste an Anthropic API key
 (console.anthropic.com, kept in ~/.dokkcast/anthropic_key), then for each episode choose the video
 and a music track, type the guest's name and job, and press Start. It transcribes, has Claude
 (`dokkpick.py`) pick the clips and write the captions, and opens the review page; set the music,
 edit and approve there, Save, then press **Make the clips** for the clips, covers, kit and zip.
 Progress is kept per episode, so the app can be closed and reopened at any point.
+
+The app's own name, logo, icon, fonts and colours are in brand.json under `studio` (MBMS Podcast
+Studio); the clips, covers and kit keep the show's branding from the rest of brand.json. The MBMS
+logo and icon files go in `assets/studio/` (from the MBMS brand kit; not kept in git). Run
+`scripts/make_app.sh` again after changing them.
 
 ### One episode, start to finish
 

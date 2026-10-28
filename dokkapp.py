@@ -29,6 +29,12 @@ STEPS = ["prep", "pick", "review", "finish"]
 jobs = {}  # name -> running thread
 
 
+def studio():
+    """The app's own name, logo and colours, from brand.json "studio"."""
+    b = json.loads((ROOT / "brand.json").read_text())
+    return dict({"name": "Dokkcast Studio"}, **b.get("studio", {}))
+
+
 def state_path(name):
     return OUT / name / "app.json"
 
@@ -207,7 +213,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         if u.path == "/":
-            return self.send(200, (ROOT / "assets" / "app.html").read_bytes(), "text/html; charset=utf-8")
+            html = (ROOT / "assets" / "app.html").read_text().replace("/*STUDIO*/null", json.dumps(studio()))
+            return self.send(200, html.encode(), "text/html; charset=utf-8")
+        if u.path == "/logo" and studio().get("logo"):
+            f = ROOT / studio()["logo"]
+            kind = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(f.suffix.lower())
+            if f.exists() and kind:
+                return self.send(200, f.read_bytes(), kind)
         if u.path == "/api/state":
             return self.send(200, {"episodes": episodes(), "next_start": next_start(), "auto_pick": can_pick()})
         self.send(404, {"error": "not found"})
@@ -303,7 +315,7 @@ def main():
         if load_state(name).get("status") in ("running", "queued"):
             start(name)
     url = f"http://127.0.0.1:{PORT}/"
-    print(f"Dokkcast Studio at {url}  (close this window to stop it)")
+    print(f"{studio()['name']} at {url}")
     if not os.environ.get("DOKK_NO_BROWSER"):
         webbrowser.open(url)
     srv.serve_forever()

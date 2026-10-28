@@ -5,32 +5,34 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dokkcast Studio</title>
 <style>
-  :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --ok: #7be0a6; --warn: #ff8a8a; --wait: #ffd27a; }
+  :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --ok: #7be0a6; --warn: #ff8a8a; --wait: #ffd27a; --field: #0d1233; --button: #222a5c; --code: #070b22; --bw: 1px; --shadow: none; --radius: 10px; --scheme: dark; --head: inherit; --track: var(--line); }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
   header { padding: 18px 16px; border-bottom: 1px solid var(--line); }
   .wrap { max-width: 860px; margin: 0 auto; }
-  h1 { font-size: 20px; margin: 0; }
-  h2 { font-size: 16px; margin: 0 0 10px; }
+  h1 { font-size: 20px; margin: 0; font-family: var(--head); }
+  .brand { display: flex; gap: 14px; align-items: center; }
+  .brand img { height: 44px; width: auto; max-width: 160px; object-fit: contain; }
+  h2 { font-size: 16px; margin: 0 0 10px; font-family: var(--head); }
   .sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
   main { padding: 0 16px 60px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 16px 0; }
+  .card { background: var(--panel); border: var(--bw) solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin: 16px 0; }
   .grid { display: grid; grid-template-columns: 150px 1fr; gap: 10px 12px; align-items: center; }
   @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
   .grid label { color: var(--dim); font-size: 14px; }
   .pick { display: flex; gap: 8px; align-items: center; min-width: 0; }
   .path { color: var(--dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .path.set { color: var(--text); }
-  input[type=text], input[type=date], input[type=password] { width: 100%; background: #0d1233; color: var(--text); border: 1px solid var(--line);
-    border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 14px; color-scheme: dark; }
-  button { background: #222a5c; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px;
+  input[type=text], input[type=date], input[type=password] { width: 100%; background: var(--field); color: var(--text); border: var(--bw) solid var(--line);
+    border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 14px; color-scheme: var(--scheme); }
+  button { background: var(--button); color: var(--text); border: var(--bw) solid var(--line); border-radius: 6px; padding: 7px 12px;
     font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
   button:hover { border-color: var(--hi); }
-  button.primary { background: var(--hi); color: #0A0F2C; border: 0; font-weight: 600; padding: 9px 16px; }
+  button.primary { background: var(--hi); color: var(--on-hi, #0A0F2C); border: 0; font-weight: 600; padding: 9px 16px; }
   button:disabled { opacity: .5; cursor: default; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 0 4px; }
-  .step { border-top: 3px solid var(--line); padding-top: 6px; font-size: 13px; color: var(--dim); }
+  .step { border-top: 3px solid var(--track); padding-top: 6px; font-size: 13px; color: var(--dim); }
   .step.done { border-color: var(--ok); color: var(--text); }
   .step.now { border-color: var(--hi); color: var(--text); font-weight: 600; }
   .step.wait { border-color: var(--wait); color: var(--text); font-weight: 600; }
@@ -42,19 +44,19 @@
   .dim { color: var(--dim); font-size: 13px; }
   details { margin-top: 10px; }
   summary { cursor: pointer; color: var(--dim); font-size: 13px; }
-  pre { background: #070b22; border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 12px; max-height: 220px;
+  pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 12px; max-height: 220px;
     overflow: auto; white-space: pre-wrap; margin: 6px 0 0; }
   .spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--hi); border-right-color: transparent; border-radius: 50%;
     animation: r 1s linear infinite; margin-right: 6px; }
   @keyframes r { to { transform: rotate(360deg); } }
-  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--warn); color: #0A0F2C; padding: 8px 14px;
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--warn); color: #fff; padding: 8px 14px;
     border-radius: 8px; font-weight: 600; display: none; max-width: 90vw; }
 </style>
 </head>
 <body>
-<header><div class="wrap">
-  <h1>Dokkcast Studio</h1>
-  <div class="sub">Episode in, social posts out: clips with music, captions, covers, posting kit and zip.</div>
+<header><div class="wrap brand">
+  <img id="logo" alt="" hidden>
+  <div><h1 id="name">Studio</h1><div class="sub" id="tagline"></div></div>
 </div></header>
 <main><div class="wrap">
   <div class="card" id="keycard" style="display:none">
@@ -81,6 +83,22 @@
 </div></main>
 <div id="toast"></div>
 <script>
+// the studio's own look (brand.json "studio"); the clips keep each show's branding
+const STUDIO = /*STUDIO*/null;
+if (STUDIO) {
+  const c = STUDIO.colors || {}, r = document.documentElement.style;
+  const look = STUDIO.look || {};
+  for (const [k, v] of Object.entries({ bg: c.bg, panel: c.panel, line: c.line, text: c.text, dim: c.dim, hi: c.accent, "on-hi": c.on_accent,
+      field: c.field, button: c.button, track: c.track, code: c.code, ok: c.ok, warn: c.warn, wait: c.wait,
+      bw: look.border, shadow: look.shadow, radius: look.radius, scheme: look.scheme, head: STUDIO.headline_font }))
+    if (v) r.setProperty("--" + k, v);
+  if (STUDIO.fonts_css) { const f = document.createElement("link"); f.rel = "stylesheet"; f.href = STUDIO.fonts_css; document.head.appendChild(f); }
+  if (STUDIO.font) document.body.style.fontFamily = STUDIO.font;
+  document.title = STUDIO.name;
+  document.getElementById("name").textContent = STUDIO.name;
+  document.getElementById("tagline").textContent = STUDIO.tagline || "";
+  if (STUDIO.logo) { const l = document.getElementById("logo"); l.onload = () => l.hidden = false; l.src = "/logo"; }
+}
 const STEPS = [["prep", "Transcribe"], ["pick", "Pick clips"], ["review", "Review"], ["finish", "Clips, covers, zip"]];
 const pick = { video: null, music: null, photo: null };
 let state = null;
@@ -175,7 +193,7 @@ function draw() {
 }
 async function refresh() {
   try { state = await (await fetch("/api/state")).json(); draw(); }
-  catch (e) { document.getElementById("eps").innerHTML = `<div class="card status err">The app has stopped. Open Dokkcast Studio again.</div>`; }
+  catch (e) { document.getElementById("eps").innerHTML = `<div class="card status err">The app has stopped. Open ${esc(STUDIO ? STUDIO.name : 'the app')} again.</div>`; }
 }
 refresh();
 setInterval(refresh, 3000);

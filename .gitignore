@@ -5,3 +5,4 @@ __pycache__/
 assets/music/*
 !assets/music/.gitkeep
 .venv/
+assets/studio/
