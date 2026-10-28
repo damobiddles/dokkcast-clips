@@ -225,8 +225,15 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/choose":
             return {"path": choose(b["kind"])}
         if path == "/api/key":  # kept on this Mac, readable only by this user
-            if not b["key"].strip().startswith("sk-ant-api"):
-                raise ValueError("that isn't an API key: they start sk-ant-api (console.anthropic.com, Settings, API keys)")
+            try:  # check it works before keeping it
+                import anthropic
+                anthropic.Anthropic(api_key=b["key"].strip()).models.list(limit=1)
+            except ImportError:
+                raise ValueError("the anthropic package is missing: run ./setup.sh again")
+            except anthropic.AuthenticationError:
+                raise ValueError("Anthropic didn't accept that key: create one at console.anthropic.com, Settings, API keys")
+            except anthropic.APIConnectionError:
+                raise ValueError("couldn't reach Anthropic to check the key: check the internet connection")
             p = Path.home() / ".dokkcast" / "anthropic_key"
             p.parent.mkdir(exist_ok=True)
             p.write_text(b["key"].strip())
