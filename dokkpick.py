@@ -112,11 +112,27 @@ def main():
     p.add_argument("--guest", default="", help='e.g. "Prof. John Deanfield"')
     p.add_argument("--role", default="", help='e.g. "Consultant Cardiologist"')
     p.add_argument("--brand", default=str(ROOT / "brand.json"))
+    p.add_argument("--prompt", action="store_true",
+                   help="no API: write the request to output/<name>/pick-prompt.txt for Claude in chat to answer")
+    p.add_argument("--answer", help="no API: the answer (JSON matching pick-prompt.txt) to apply")
     a = p.parse_args()
     cfg = dict(DEFAULTS, **load_brand(a.brand).get("pick", {}))
     wd = ROOT / "output" / a.name
     transcript = (wd / "transcript.txt").read_text()
     words = json.loads((wd / "words.json").read_text())
+    if a.prompt:
+        schema = json.dumps(strict(Picks.model_json_schema()), indent=1)
+        (wd / "pick-prompt.txt").write_text(prompt(cfg, a.guest, a.role, transcript, examples(a.name)) +
+                                           f"\n\nAnswer with JSON only, matching this schema:\n{schema}\n")
+        print(f"request -> {wd / 'pick-prompt.txt'}; save the answer and run: dokkpick.py {a.name} --answer <file>")
+        return
+    if a.answer:
+        try:
+            picks = Picks.model_validate_json(Path(a.answer).expanduser().read_text())
+        except ValidationError as e:
+            sys.exit(f"that answer doesn't match the shape asked for: {e.errors()[0]['msg']}")
+        save(a, cfg, wd, words, picks)
+        return
     key = api_key()
     if not key:
         sys.exit("no Anthropic API key: put it in ~/.dokkcast/anthropic_key or ANTHROPIC_API_KEY")
@@ -145,6 +161,13 @@ def main():
     except (StopIteration, ValidationError):
         sys.exit("Claude's answer didn't come back in the right shape; run it again")
 
+    save(a, cfg, wd, words, picks)
+    u = r.usage
+    print(f"clips and copy -> {wd / 'copy.json'} ({u.input_tokens} in, {u.output_tokens} out tokens)")
+
+
+def save(a, cfg, wd, words, picks):
+    """Write the picks into plan.json (via dokkepisode.py suggest) and copy.json."""
     clips, copy = [], {}
     for n, c in enumerate(sorted(picks.clips, key=lambda c: c.first_word), 1):
         f, l = max(0, c.first_word), min(len(words) - 1, c.last_word)
@@ -166,8 +189,6 @@ def main():
     sug.write_text(json.dumps({"speakers": speakers, "clips": clips}, indent=1, ensure_ascii=False))
     (wd / "copy.json").write_text(json.dumps(copy, indent=1, ensure_ascii=False))
     subprocess.run([sys.executable, str(ROOT / "dokkepisode.py"), "suggest", a.name, str(sug)], check=True)
-    u = r.usage
-    print(f"{len(clips)} clips and their copy -> {wd / 'copy.json'} ({u.input_tokens} in, {u.output_tokens} out tokens)")
 
 
 if __name__ == "__main__":

@@ -101,7 +101,19 @@ def has_picks(name):
     return bool(plan.get("clips")) and (wd / "copy.json").exists()
 
 
+def settings():
+    p = Path.home() / ".dokkcast" / "settings.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+def pick_mode():
+    """"api": the app asks Claude itself (needs a key); "chat": it pauses for Claude in chat to pick."""
+    return settings().get("pick", "api")
+
+
 def can_pick():
+    if pick_mode() == "chat":
+        return False
     try:
         import anthropic  # noqa: F401
     except ImportError:
@@ -140,10 +152,9 @@ def advance(name):
                 st["step"] = "pick"
             elif step == "pick":
                 if not has_picks(name):
-                    if not can_pick():
+                    if not can_pick():  # leave the request ready for Claude in chat, then wait
+                        run(name, [PY, "dokkpick.py", name, "--prompt", "--guest", st.get("guest", ""), "--role", st.get("role", "")])
                         st["status"] = "waiting"; st["waiting"] = "picks"; save_state(name, st); return
-                    env_key = os.environ.get("ANTHROPIC_API_KEY") or api_key()
-                    os.environ["ANTHROPIC_API_KEY"] = env_key
                     run(name, [PY, "dokkpick.py", name, "--guest", st.get("guest", ""), "--role", st.get("role", "")])
                 st["step"] = "review"
             elif step == "review":
@@ -243,7 +254,8 @@ class Handler(BaseHTTPRequestHandler):
             if f.exists() and kind:
                 return self.send(200, f.read_bytes(), kind)
         if u.path == "/api/state":
-            return self.send(200, {"episodes": episodes(), "next_start": next_start(), "auto_pick": can_pick()})
+            return self.send(200, {"episodes": episodes(), "next_start": next_start(), "auto_pick": can_pick(),
+                                  "mode": pick_mode(), "has_key": bool(os.environ.get("ANTHROPIC_API_KEY") or api_key())})
         self.send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -258,6 +270,11 @@ class Handler(BaseHTTPRequestHandler):
     def action(self, path, b):
         if path == "/api/choose":
             return {"path": choose(b["kind"])}
+        if path == "/api/mode":
+            p = Path.home() / ".dokkcast" / "settings.json"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(dict(settings(), pick="chat" if b.get("pick") == "chat" else "api")))
+            return {"ok": True}
         if path == "/api/key":  # kept on this Mac, readable only by this user
             try:  # check it works before keeping it
                 import anthropic
@@ -269,7 +286,7 @@ class Handler(BaseHTTPRequestHandler):
             except anthropic.APIConnectionError:
                 raise ValueError("couldn't reach Anthropic to check the key: check the internet connection")
             p = Path.home() / ".dokkcast" / "anthropic_key"
-            p.parent.mkdir(exist_ok=True)
+            p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(b["key"].strip())
             p.chmod(0o600)
             return {"ok": True}
@@ -298,6 +315,8 @@ class Handler(BaseHTTPRequestHandler):
         if not st:
             raise ValueError("no such episode")
         if path == "/api/continue":  # after the picks are in, or the review is saved
+            if st.get("waiting") == "picks" and not has_picks(name):
+                raise ValueError("no clips picked yet: ask Claude in chat to pick the clips for " + name)
             if st.get("waiting") == "review":
                 if not newest_saved(name):
                     raise ValueError("press Save my choices on the review page first (it goes to Downloads)")

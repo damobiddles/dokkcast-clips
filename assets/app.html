@@ -31,6 +31,8 @@
   button:hover { border-color: var(--hi); }
   button.primary { background: var(--hi); color: var(--on-hi, #0A0F2C); border: 0; font-weight: 600; padding: 9px 16px; }
   button:disabled { opacity: .5; cursor: default; }
+  .opt { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; flex-basis: 100%; cursor: pointer; }
+  .opt input { margin-top: 3px; accent-color: var(--hi); }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
   .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 0 4px; }
   .step { border-top: 3px solid var(--track); padding-top: 6px; font-size: 13px; color: var(--dim); }
@@ -60,11 +62,16 @@
   <div><h1 id="name">Studio</h1><div class="sub" id="tagline"></div></div>
 </div></header>
 <main><div class="wrap">
-  <div class="card" id="keycard" style="display:none">
-    <h2>Connect Claude</h2>
-    <div class="dim">Claude picks the clips and writes the captions. Paste an Anthropic API key (from console.anthropic.com, under API keys).
-      It's kept on this Mac only. Without one, the app stops after transcribing and you ask Claude in chat to pick the clips.</div>
-    <div class="row"><input type="password" id="key" placeholder="sk-ant-..." style="flex:1;min-width:200px"><button id="savekey">Save key</button></div>
+  <div class="card" id="keycard">
+    <h2>Clip picking</h2>
+    <div class="row" style="margin-top:0">
+      <label class="opt"><input type="radio" name="mode" value="chat"> Claude in chat (free): the app pauses after transcribing and you ask Claude to pick the clips</label>
+      <label class="opt"><input type="radio" name="mode" value="api"> Automatic: the app asks Claude itself (needs an Anthropic API key, about 30p an episode)</label>
+    </div>
+    <div id="keyrow" style="display:none">
+      <div class="dim" style="margin-top:10px">Paste an Anthropic API key (console.anthropic.com, Settings, API keys). It's kept on this Mac only.</div>
+      <div class="row"><input type="password" id="key" placeholder="sk-ant-..." style="flex:1;min-width:200px"><button id="savekey">Save key</button></div>
+    </div>
   </div>
 
   <div class="card">
@@ -136,6 +143,7 @@ document.getElementById("go").onclick = async () => {
   ["guest", "role"].forEach(id => document.getElementById(id).value = "");
   refresh();
 };
+document.querySelectorAll("input[name=mode]").forEach(r => r.onchange = async () => { await post("/api/mode", { pick: r.value }); refresh(); });
 document.getElementById("savekey").onclick = async () => {
   const key = document.getElementById("key").value.trim();
   if (!key) return;
@@ -151,7 +159,7 @@ function stepClass(ep, i) {
 function status(ep) {
   if (ep.status === "error") return `<div class="status err">Stopped: ${esc(ep.error)}</div>`;
   if (ep.status === "done") return `<div class="status">Done. The zip is ready to share${ep.zip ? `: ${esc(base(ep.zip))}` : ""}.</div>`;
-  if (ep.waiting === "picks") return `<div class="status">Transcribed. Ask Claude in chat to pick the clips for <b>${esc(ep.name)}</b>, then press Continue.</div>`;
+  if (ep.waiting === "picks") return `<div class="status">Transcribed. Now tell Claude in chat: <b>pick the clips for ${esc(ep.name)}</b>. When Claude says they're in, press Continue.</div>`;
   if (ep.waiting === "review") return `<div class="status">Your turn: on the review page, watch the clips, set the music, edit the captions and tick Approve. Then press <b>Save my choices</b> there and <b>Make the clips</b> here.</div>`;
   const what = { prep: "Transcribing and finding the speakers (about 10 minutes)", pick: "Claude is picking the clips and writing the captions",
     review: "Planning the posting dates and building the review page", finish: "Rendering the clips with music, covers, kit and zip (about 20 minutes)" }[ep.step];
@@ -169,7 +177,8 @@ function actions(ep) {
   return b.join("");
 }
 function draw() {
-  document.getElementById("keycard").style.display = state.auto_pick ? "none" : "block";
+  document.querySelectorAll("input[name=mode]").forEach(r => r.checked = r.value === state.mode);
+  document.getElementById("keyrow").style.display = state.mode === "api" && !state.has_key ? "block" : "none";
   const s = document.getElementById("start"); if (!s.value) s.value = state.next_start;
   const box = document.getElementById("eps");
   const open = new Set([...box.querySelectorAll("details[open]")].map(d => d.dataset.name));
