@@ -16,7 +16,7 @@ copy.json files are given to Claude as examples of the house style.
 import argparse, json, os, subprocess, sys
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from dokkclip import ROOT, load_brand
 
@@ -46,6 +46,19 @@ class Clip(BaseModel):
 class Picks(BaseModel):
     speakers: list[Speaker]
     clips: list[Clip]
+
+
+def strict(schema):
+    """Structured output needs every object closed to extra keys."""
+    if isinstance(schema, dict):
+        if schema.get("type") == "object":
+            schema["additionalProperties"] = False
+        for v in schema.values():
+            strict(v)
+    elif isinstance(schema, list):
+        for v in schema:
+            strict(v)
+    return schema
 
 
 def api_key():
@@ -111,11 +124,12 @@ def main():
     import anthropic
     client = anthropic.Anthropic(api_key=key)
     print(f"asking Claude for {cfg['clips']} clips and their copy ...", flush=True)
-    try:
-        r = client.messages.parse(
-            model=cfg["model"], max_tokens=16000, output_config={"effort": "high"},
-            messages=[{"role": "user", "content": prompt(cfg, a.guest, a.role, transcript, examples(a.name))}],
-            output_format=Picks)
+    try:  # streamed: nine clips of copy plus thinking needs room, and a long answer would time out otherwise
+        with client.messages.stream(
+                model=cfg["model"], max_tokens=64000, output_config={"effort": "high", "format": {
+                    "type": "json_schema", "schema": strict(Picks.model_json_schema())}},
+                messages=[{"role": "user", "content": prompt(cfg, a.guest, a.role, transcript, examples(a.name))}]) as stream:
+            r = stream.get_final_message()
     except anthropic.AuthenticationError:
         sys.exit("the Anthropic API key was refused: check it at console.anthropic.com")
     except anthropic.RateLimitError:
@@ -124,9 +138,12 @@ def main():
         sys.exit("couldn't reach the Anthropic API: check the internet connection")
     if r.stop_reason == "refusal":
         sys.exit(f"Claude declined this transcript ({getattr(r.stop_details, 'category', None)}); pick the clips in chat instead")
-    if r.stop_reason == "max_tokens" or not r.parsed_output:
+    if r.stop_reason == "max_tokens":
         sys.exit("Claude's answer was cut short; run it again")
-    picks = r.parsed_output
+    try:
+        picks = Picks.model_validate_json(next(b.text for b in r.content if b.type == "text"))
+    except (StopIteration, ValidationError):
+        sys.exit("Claude's answer didn't come back in the right shape; run it again")
 
     clips, copy = [], {}
     for n, c in enumerate(sorted(picks.clips, key=lambda c: c.first_word), 1):
