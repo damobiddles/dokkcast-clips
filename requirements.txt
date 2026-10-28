@@ -4,3 +4,4 @@ Pillow
 cairosvg
 fonttools
 brotli
+anthropic
