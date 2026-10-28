@@ -5,9 +5,13 @@
     python dokkpost.py plan Marcela --start 2026-11-02 --time 12:00 --days mon,wed,fri
     python dokkpost.py review Marcela               # writes output/Marcela/posts.html to tick clips and edit copy
     python dokkpost.py apply Marcela ~/Downloads/posts.json   # take the choices saved from posts.html
+    python dokkpost.py kit Marcela                  # posting kit to upload by hand: output/Marcela/kit/
     python dokkpost.py channels                     # check the Postiz login and list connected accounts
     python dokkpost.py schedule Marcela             # dry run: what would go out, and each channel's rules
     python dokkpost.py schedule Marcela --go        # upload approved clips and schedule them in Postiz
+
+The kit needs no Postiz: one folder per posting day with each platform's video and caption, and
+kit.html with copy buttons and upload links, to post or schedule by hand in each app.
 
 Nothing is sent to Postiz unless a post is approved in posts.json and schedule is run with --go.
 Posts already sent are remembered in posts.json, so running schedule again only sends new approvals.
@@ -19,7 +23,7 @@ Copy lives in output/<name>/copy.json, written alongside the clips:
 Which clip shape each platform gets, the posting time zone and per-platform Postiz settings are in
 brand.json under "social". Needs the Postiz CLI (npm install -g postiz) and `postiz auth:login`.
 """
-import argparse, json, shutil, subprocess, sys
+import argparse, json, os, shutil, subprocess, sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -105,6 +109,47 @@ def apply(name, brand, path):
     review(name, brand)
 
 
+# ------------------------------------------------------------------------- kit
+UPLOAD = {"tiktok": "https://www.tiktok.com/tiktokstudio/upload",
+          "instagram": "https://business.facebook.com/latest/composer",
+          "youtube": "https://studio.youtube.com",
+          "linkedin": "https://www.linkedin.com/feed/?shareActive=true"}
+
+
+def kit(name, brand):
+    """Folder per post with each platform's video and caption, plus kit.html, for posting by hand."""
+    wd = work_dir(name)
+    data = json.loads((wd / "posts.json").read_text())
+    posts = [p for p in data["posts"] if p["approved"]] or data["posts"]
+    out = wd / "kit"
+    shutil.rmtree(out, ignore_errors=True)
+    for p in posts:
+        day = datetime.fromisoformat(p["when"])
+        p["dir"] = f"{day:%Y-%m-%d %a} clip{p['clip']}"
+        d = out / p["dir"]
+        d.mkdir(parents=True)
+        p["files"] = {}
+        text = []
+        for pl, on in p["platforms"].items():
+            if not on:
+                continue
+            src = wd / "clips" / f"{name}_clip{p['clip']}_{brand['social']['shapes'][pl]}.mp4"
+            dst = d / f"{pl}.mp4"
+            try:
+                os.link(src, dst)  # no extra disk space
+            except OSError:
+                shutil.copy2(src, dst)
+            p["files"][pl] = dst.as_uri()
+            cap = (f"Title: {p['copy'].get('youtube_title', '')}\n\n" if pl == "youtube" else "") + p["copy"][pl]
+            (d / f"{pl}.txt").write_text(cap + "\n")
+            text.append(f"== {pl} ==\n{cap}\n")
+        (d / "captions.txt").write_text("\n".join(text))
+    data["posts"], data["upload"], data["shapes"] = posts, UPLOAD, brand["social"]["shapes"]
+    (out / "kit.html").write_text((ROOT / "assets" / "kit.html").read_text().replace("/*POSTS*/null", json.dumps(data)))
+    print(f"{len(posts)} posts{'' if any(p['approved'] for p in posts) else ' (none approved yet, so all of them)'}"
+          f" -> {out}\nopen {out / 'kit.html'} in a browser")
+
+
 # -------------------------------------------------------------------- schedule
 def channels(brand, quiet=False):
     """Map each platform to a connected Postiz account: brand.json social.channels wins, else the only match."""
@@ -163,7 +208,7 @@ def schedule(name, brand, go=False):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["plan", "review", "apply", "channels", "schedule"])
+    p.add_argument("command", choices=["plan", "review", "apply", "kit", "channels", "schedule"])
     p.add_argument("target", nargs="?", help="the episode name (as in output/<name>)")
     p.add_argument("file", nargs="?", help="apply: posts.json saved from posts.html")
     p.add_argument("--start", help="plan: first posting day, YYYY-MM-DD (default tomorrow)")
@@ -182,6 +227,8 @@ def main():
         review(name, brand)
     elif a.command == "apply":
         apply(name, brand, a.file)
+    elif a.command == "kit":
+        kit(name, brand)
     elif a.command == "channels":
         channels(brand)
     else:

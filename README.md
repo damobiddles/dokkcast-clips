@@ -81,3 +81,8 @@ python dokkpost.py schedule Marcela --go
 
 Nothing goes to Postiz unless it is approved and `--go` is given. Shapes per platform, time zone,
 posting days and Postiz settings are under `social` in `brand.json`.
+
+To post by hand instead, `python dokkpost.py kit Marcela` needs no Postiz. It writes
+`output/Marcela/kit/`: a folder per post with each platform's video and caption, and `kit.html`
+with copy buttons, upload links and a done tick for each platform. It uses the approved posts, or
+all of them if none are approved yet.
