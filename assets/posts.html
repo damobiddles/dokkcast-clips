@@ -43,6 +43,7 @@
   .mix b { font-variant-numeric: tabular-nums; min-width: 52px; }
   .mix .note { color: var(--dim); font-size: 12px; flex-basis: 100%; }
   button.on { border-color: var(--hi); color: var(--hi); }
+  #back { color: var(--hi); font-size: 13px; }
 </style>
 </head>
 <body>
@@ -56,8 +57,10 @@
 </div></header>
 <main><div class="wrap" id="posts"></div></main>
 <footer><div class="wrap">
+  <button class="primary" id="make" hidden>Save and make the clips</button>
   <button class="primary" id="save">Save my choices</button>
   <button id="all">Approve all</button>
+  <a id="back" href="/" hidden>Back to the app</a>
   <span id="msg">Saves posts.json to Downloads. Nothing is posted until you've approved it here.</span>
 </div></footer>
 <script>
@@ -160,11 +163,36 @@ function draw() {
 draw();
 
 document.getElementById("all").onclick = () => { D.posts.forEach(p => p.approved = true); draw(); };
-document.getElementById("save").onclick = () => {
+// opened through the app: save straight back to it, no Downloads
+const APP = location.protocol.startsWith("http");
+const msg = document.getElementById("msg");
+if (APP) {
+  document.getElementById("save").classList.remove("primary");
+  ["make", "back"].forEach(id => document.getElementById(id).hidden = false);
+  msg.textContent = "Make the clips when you're happy. Nothing is posted from here.";
+}
+function choices() {
   const out = JSON.parse(JSON.stringify(D));
   delete out.shapes; out.posts.forEach(p => { delete p.files; delete p.src; delete p.music_at; });
   if (M) out.music_db = M.db;
   delete out.music;
+  return out;
+}
+async function toApp(go) {
+  const r = await fetch("/api/save", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: D.episode, posts: choices(), go }) });
+  if (!r.ok) { msg.textContent = "Couldn't save: " + ((await r.json()).error || "is the app still open?"); return; }
+  if (go) { music && music.pause(); location.href = "/"; }
+  else msg.textContent = "Saved. Make the clips when you're ready.";
+}
+document.getElementById("make").onclick = () => {
+  const n = D.posts.filter(p => p.approved).length;
+  if (!n) { msg.textContent = "Tick Approve on the clips to make first."; return; }
+  toApp(true);
+};
+document.getElementById("save").onclick = () => {
+  if (APP) return toApp(false);
+  const out = choices();
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: "application/json" }));
   a.download = "posts.json"; a.click();

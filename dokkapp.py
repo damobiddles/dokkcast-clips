@@ -6,20 +6,22 @@
 Pick the episode video and a music track, and it runs each step in order:
 
     1. prep      transcribe and find the speakers            dokkepisode.py prep
-    2. pick      choose the clips and write the copy          dokkpick.py (Claude API), or Claude in chat
+    2. pick      choose the clips and write the copy          dokkpick.py: Claude on this Mac (Claude Code,
+                                                              your Claude login), the Claude API, or Claude in chat
     3. review    plan the posting dates and open the review   dokkpost.py plan + review --music
-                 page: watch, set the music, edit, approve
+                 page (served by the app): watch, set the music,
+                 edit, approve, then Save and make the clips
     4. finish    render the approved clips with the music,    dokkpost.py apply + finish
                  covers, posting kit and zip
 
 Each episode's progress is kept in output/<name>/app.json, so the app can be closed and opened
-again at any point. Nothing leaves the Mac except the transcript, if the Claude API picks the clips.
+again at any point. Nothing leaves the Mac except the transcript, which goes to Claude to pick the clips.
 """
 import json, os, re, shutil, subprocess, sys, threading, webbrowser
 from datetime import date, datetime, timedelta
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import quote, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "output"
@@ -73,6 +75,10 @@ def mac(script):
     return r.stdout.strip() or None if r.returncode == 0 else None
 
 
+def notify(text):
+    mac(f'display notification "{text.replace(chr(34), "")}" with title "{studio()["name"]}"')
+
+
 def choose(kind):
     types = {"video": '{"public.movie"}', "music": '{"public.audio"}', "photo": '{"public.image"}'}
     prompts = {"video": "Choose the episode video", "music": "Choose the music track",
@@ -106,19 +112,29 @@ def settings():
     return json.loads(p.read_text()) if p.exists() else {}
 
 
+def claude_cli():
+    from dokkpick import claude_cli as find
+    return find()
+
+
 def pick_mode():
-    """"api": the app asks Claude itself (needs a key); "chat": it pauses for Claude in chat to pick."""
-    return settings().get("pick", "api")
+    """"mac": Claude Code on this Mac picks, on the user's Claude login (no API key); "api": the app asks
+    the Claude API (needs a key); "chat": it pauses for Claude in chat to pick."""
+    return settings().get("pick") or ("mac" if claude_cli() else "chat")
 
 
 def can_pick():
-    if pick_mode() == "chat":
-        return False
+    """How the app picks the clips by itself: "mac", "api", or None (wait for Claude in chat)."""
+    mode = pick_mode()
+    if mode == "mac":
+        return "mac" if claude_cli() else None
+    if mode != "api":
+        return None
     try:
         import anthropic  # noqa: F401
     except ImportError:
-        return False
-    return (ROOT / "dokkpick.py").exists() and bool(os.environ.get("ANTHROPIC_API_KEY") or api_key())
+        return None
+    return "api" if os.environ.get("ANTHROPIC_API_KEY") or api_key() else None
 
 
 def api_key():
@@ -127,8 +143,14 @@ def api_key():
 
 
 def newest_saved(name):
-    """The posts.json saved from this episode's review page, newest first in Downloads."""
-    files = sorted((Path.home() / "Downloads").glob("posts*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    """The choices saved from this episode's review page: by the app into the episode folder, or
+    (from a review page opened as a file) posts.json in Downloads. The newest wins."""
+    files = [OUT / name / "posts-saved.json"]
+    try:
+        files += (Path.home() / "Downloads").glob("posts*.json")
+    except OSError:  # macOS may keep the app out of Downloads
+        pass
+    files = sorted((f for f in files if f.exists()), key=lambda p: p.stat().st_mtime, reverse=True)
     for f in files:
         try:
             if json.loads(f.read_text()).get("episode") == name:
@@ -152,16 +174,18 @@ def advance(name):
                 st["step"] = "pick"
             elif step == "pick":
                 if not has_picks(name):
-                    if not can_pick():  # leave the request ready for Claude in chat, then wait
-                        run(name, [PY, "dokkpick.py", name, "--prompt", "--guest", st.get("guest", ""), "--role", st.get("role", "")])
+                    who = ["--guest", st.get("guest", ""), "--role", st.get("role", "")]
+                    how = can_pick()
+                    if not how:  # leave the request ready for Claude in chat, then wait
+                        run(name, [PY, "dokkpick.py", name, "--prompt"] + who)
                         st["status"] = "waiting"; st["waiting"] = "picks"; save_state(name, st); return
-                    run(name, [PY, "dokkpick.py", name, "--guest", st.get("guest", ""), "--role", st.get("role", "")])
+                    run(name, [PY, "dokkpick.py", name] + (["--claude"] if how == "mac" else []) + who)
                 st["step"] = "review"
             elif step == "review":
                 if not (OUT / name / "posts.json").exists():
                     run(name, [PY, "dokkpost.py", "plan", name, "--start", st.get("start") or next_start()])
                 run(name, [PY, "dokkpost.py", "review", name] + (["--music", st["music"]] if st.get("music") else []))
-                subprocess.run(["open", str(OUT / name / "posts.html")])
+                notify(f"{st.get('guest') or name}: the clips are ready to review")  # the app page opens the review
                 st["status"] = "waiting"; st["waiting"] = "review"; save_state(name, st); return
             elif step == "finish":
                 saved = newest_saved(name)
@@ -173,7 +197,7 @@ def advance(name):
                 run(name, [PY, "dokkpost.py", "finish", name] + (["--title", st["guest"]] if st.get("guest") else []))
                 st["step"] = "done"; st["status"] = "done"; st["zip"] = find_zip(name, st.get("guest"))
                 save_state(name, st)
-                subprocess.run(["open", str(OUT / name / "kit" / "kit.html")])
+                notify(f"{st.get('guest') or name}: the posting kit and zip are ready")
                 return
             else:
                 return
@@ -182,6 +206,11 @@ def advance(name):
         st.update(status="error", error=str(e)); save_state(name, st)
     finally:
         jobs.pop(name, None)
+
+
+def page(name, path):
+    """A page of an episode's folder, as the app serves it."""
+    return f"http://127.0.0.1:{PORT}/ep/{quote(name)}/{path}"
 
 
 def find_zip(name, guest):
@@ -226,6 +255,8 @@ def episodes():
         lg = p.parent / "app.log"
         st["log"] = lg.read_text()[-3000:] if lg.exists() else ""
         st["photo_set"] = (p.parent / "photo.jpg").exists()
+        st["review_url"] = page(st["name"], "posts.html")
+        st["kit_url"] = page(st["name"], "kit/kit.html")
         out.append(st)
     return out
 
@@ -243,8 +274,56 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
 
+    def send_file(self, f, html_rewrite=None):
+        """A file, with byte ranges so videos can be scrubbed (Safari won't play them without)."""
+        kind = {".html": "text/html; charset=utf-8", ".mp4": "video/mp4", ".mov": "video/quicktime",
+                ".m4v": "video/mp4", ".m4a": "audio/mp4", ".mp3": "audio/mpeg", ".wav": "audio/wav",
+                ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".json": "application/json",
+                ".txt": "text/plain; charset=utf-8", ".css": "text/css", ".js": "text/javascript",
+                ".svg": "image/svg+xml"}.get(f.suffix.lower(), "application/octet-stream")
+        if html_rewrite and f.suffix.lower() == ".html":
+            return self.send(200, html_rewrite(f.read_text()).encode(), kind)
+        size = f.stat().st_size
+        start, end = 0, size - 1
+        m = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range") or "")
+        if m and (m[1] or m[2]):
+            start, end = (int(m[1]), int(m[2] or end)) if m[1] else (max(0, size - int(m[2])), end)
+            end = min(end, size - 1)
+        self.send_response(206 if m else 200)
+        self.send_header("Content-Type", kind)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        if m:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+        try:
+            with open(f, "rb") as fh:
+                fh.seek(start)
+                left = end - start + 1
+                while left > 0:
+                    chunk = fh.read(min(1 << 20, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):  # the player stopped reading, as it does when seeking
+            pass
+
     def do_GET(self):
         u = urlparse(self.path)
+        if u.path.startswith("/ep/"):  # an episode's review page, kit and clips
+            name, _, rest = unquote(u.path[4:]).partition("/")
+            wd = OUT / name
+            f = Path(os.path.normpath(wd / rest))
+            if load_state(name) and f.is_relative_to(wd) and f.is_file():
+                # the pages point at videos as files on this Mac: fetch those through the app instead
+                return self.send_file(f, lambda h: h.replace('"file://', '"/media'))
+        if u.path.startswith("/media/"):  # only the episode videos and music the app was given
+            f = Path(unquote(u.path[6:]))
+            allowed = {Path(v).resolve() for st in map(load_state, [p.parent.name for p in OUT.glob("*/app.json")])
+                       for v in (st.get("video"), st.get("music")) if v}
+            if f.is_file() and (f.resolve() in allowed or f.resolve().is_relative_to(OUT.resolve())):
+                return self.send_file(f)
         if u.path == "/":
             html = (ROOT / "assets" / "app.html").read_text().replace("/*STUDIO*/null", json.dumps(studio()))
             return self.send(200, html.encode(), "text/html; charset=utf-8")
@@ -254,8 +333,9 @@ class Handler(BaseHTTPRequestHandler):
             if f.exists() and kind:
                 return self.send(200, f.read_bytes(), kind)
         if u.path == "/api/state":
-            return self.send(200, {"episodes": episodes(), "next_start": next_start(), "auto_pick": can_pick(),
-                                  "mode": pick_mode(), "has_key": bool(os.environ.get("ANTHROPIC_API_KEY") or api_key())})
+            return self.send(200, {"episodes": episodes(), "next_start": next_start(), "auto_pick": bool(can_pick()),
+                                  "mode": pick_mode(), "has_claude": bool(claude_cli()),
+                                  "has_key": bool(os.environ.get("ANTHROPIC_API_KEY") or api_key())})
         self.send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -273,7 +353,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/mode":
             p = Path.home() / ".dokkcast" / "settings.json"
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps(dict(settings(), pick="chat" if b.get("pick") == "chat" else "api")))
+            p.write_text(json.dumps(dict(settings(), pick=b.get("pick") if b.get("pick") in ("mac", "chat", "api") else "mac")))
             return {"ok": True}
         if path == "/api/key":  # kept on this Mac, readable only by this user
             try:  # check it works before keeping it
@@ -324,6 +404,11 @@ class Handler(BaseHTTPRequestHandler):
             st["waiting"] = None
             save_state(name, st)
             start(name)
+            return {"ok": True}
+        if path == "/api/save":  # from the review page: keep the choices, and make the clips if asked
+            (OUT / name / "posts-saved.json").write_text(json.dumps(b["posts"], indent=1, ensure_ascii=False))
+            if b.get("go") and st.get("waiting") == "review" and name not in jobs:
+                st.update(step="finish", waiting=None); save_state(name, st); start(name)
             return {"ok": True}
         if path == "/api/reopen":  # back to the review page, e.g. to change captions after rendering
             st.update(step="review", status="queued", waiting=None); save_state(name, st); start(name)

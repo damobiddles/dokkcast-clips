@@ -9,11 +9,12 @@ for each clip a title, captions for TikTok, Instagram and LinkedIn, and a YouTub
 description. Writes them into plan.json (through dokkepisode.py suggest) and copy.json, ready for
 dokkpost.py plan and review, where every clip and caption is checked before anything is made.
 
-Needs the anthropic package and an API key in ANTHROPIC_API_KEY or ~/.dokkcast/anthropic_key.
+Needs the anthropic package and an API key in ANTHROPIC_API_KEY or ~/.dokkcast/anthropic_key, or with
+--claude, Claude Code installed and signed in on this Mac (it uses that Claude subscription, no API key).
 Show details (host, how many clips, model) are in brand.json under "pick". Earlier episodes'
 copy.json files are given to Claude as examples of the house style.
 """
-import argparse, json, os, subprocess, sys
+import argparse, glob, json, os, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
@@ -67,6 +68,41 @@ def api_key():
     return k or (p.read_text().strip() if p.exists() else None)
 
 
+def claude_cli():
+    """Claude Code on this Mac: on the PATH, from its installer, or the copy inside the Claude app."""
+    home = Path.home()
+    found = [shutil.which("claude"), home / ".local/bin/claude", home / ".claude/local/claude",
+             "/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+    found += sorted(glob.glob(str(home / "Library/Application Support/Claude/claude-code/*/*/claude.app/Contents/MacOS/claude")),
+                    key=os.path.getmtime, reverse=True)  # the Claude app's own copy, newest first
+    return next((str(f) for f in found if f and os.access(f, os.X_OK)), None)
+
+
+def ask_claude_cli(text, schema):
+    """Ask Claude Code in print mode, signed in with the user's own Claude account (no API key)."""
+    cli = claude_cli()
+    if not cli:
+        sys.exit("Claude Code isn't installed on this Mac: see README, The studio app, then Try again")
+    env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}  # use the Claude login, never a key
+    with tempfile.TemporaryDirectory() as tmp:  # an empty folder, so no project settings come with it
+        r = subprocess.run([cli, "-p", "--output-format", "json", "--model", "opus", "--json-schema", schema,
+                            "--no-session-persistence"],
+                           input=text, capture_output=True, text=True, cwd=tmp, env=env, timeout=1800)
+    try:
+        out = json.loads(r.stdout)
+    except ValueError:
+        out = {}
+    if r.returncode or out.get("is_error"):
+        msg = (out.get("result") or r.stderr or r.stdout).strip().splitlines()[-1:] or ["no answer"]
+        if "log" in msg[0].lower() and "in" in msg[0].lower():
+            sys.exit("Claude Code isn't signed in: open Terminal, type claude, sign in with your Claude account, then Try again")
+        sys.exit(f"Claude Code didn't answer: {msg[0][:200]}")
+    if out.get("structured_output"):
+        return json.dumps(out["structured_output"])
+    answer = out.get("result", "")
+    return answer[answer.find("{"):answer.rfind("}") + 1]  # the JSON, without any words around it
+
+
 def examples(name, limit=2):
     """Copy from earlier episodes, newest first, as a style guide."""
     out = []
@@ -115,16 +151,33 @@ def main():
     p.add_argument("--prompt", action="store_true",
                    help="no API: write the request to output/<name>/pick-prompt.txt for Claude in chat to answer")
     p.add_argument("--answer", help="no API: the answer (JSON matching pick-prompt.txt) to apply")
+    p.add_argument("--claude", action="store_true",
+                   help="no API: ask Claude Code on this Mac, signed in with your Claude account")
     a = p.parse_args()
     cfg = dict(DEFAULTS, **load_brand(a.brand).get("pick", {}))
     wd = ROOT / "output" / a.name
     transcript = (wd / "transcript.txt").read_text()
     words = json.loads((wd / "words.json").read_text())
-    if a.prompt:
+    if a.prompt or a.claude:
         schema = json.dumps(strict(Picks.model_json_schema()), indent=1)
-        (wd / "pick-prompt.txt").write_text(prompt(cfg, a.guest, a.role, transcript, examples(a.name)) +
-                                           f"\n\nAnswer with JSON only, matching this schema:\n{schema}\n")
-        print(f"request -> {wd / 'pick-prompt.txt'}; save the answer and run: dokkpick.py {a.name} --answer <file>")
+        request = prompt(cfg, a.guest, a.role, transcript, examples(a.name)) + \
+            f"\n\nAnswer with JSON only, matching this schema:\n{schema}\n"
+        (wd / "pick-prompt.txt").write_text(request)
+        if a.prompt:
+            print(f"request -> {wd / 'pick-prompt.txt'}; save the answer and run: dokkpick.py {a.name} --answer <file>")
+            return
+        print(f"asking Claude on this Mac for {cfg['clips']} clips and their copy (a few minutes) ...", flush=True)
+        for attempt in (1, 2):
+            (wd / "pick-answer.json").write_text(ask_claude_cli(request, schema))
+            try:
+                picks = Picks.model_validate_json((wd / "pick-answer.json").read_text())
+                break
+            except ValidationError:
+                if attempt == 2:
+                    sys.exit("Claude's answer didn't come back in the right shape; run it again")
+                print("the answer wasn't in the right shape; asking again ...", flush=True)
+        save(a, cfg, wd, words, picks)
+        print(f"clips and copy -> {wd / 'copy.json'}")
         return
     if a.answer:
         try:

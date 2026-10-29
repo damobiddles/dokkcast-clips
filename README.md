@@ -89,12 +89,22 @@ all of them if none are approved yet.
 
 ### The studio app
 
-The whole routine below in one window. Once, after `./setup.sh`: `scripts/make_app.sh`, which puts
-the app in ~/Applications (drag it to the Dock). Open it, paste an Anthropic API key
-(console.anthropic.com, kept in ~/.dokkcast/anthropic_key), then for each episode choose the video
-and a music track, type the guest's name and job, and press Start. It transcribes, has Claude
-(`dokkpick.py`) pick the clips and write the captions, and opens the review page; set the music,
-edit and approve there, Save, then press **Make the clips** for the clips, covers, kit and zip.
+The whole routine below in one window. Keep this folder outside Desktop, Documents and Downloads
+(e.g. ~/Offcuts), since macOS won't let the app open those. Once, after `./setup.sh`:
+`scripts/make_app.sh`, which puts the app in ~/Applications (drag it to the Dock). Then for each episode
+open it, choose the video and a music track, type the guest's name and job, and press Start. It
+transcribes, has Claude (`dokkpick.py`) pick the clips and write the captions, and opens the review in
+the same window; set the music, edit and approve, then press **Save and make the clips** for the
+clips, covers, kit and zip (**Show zip in Finder** at the end).
+
+Who picks the clips is set at the top of the app:
+- **Claude on this Mac** (default): Claude Code, signed in with your own Claude account, so no API key
+  and no cost beyond the subscription. Once, in Terminal: `curl -fsSL https://claude.ai/install.sh | bash`,
+  then type `claude` and sign in.
+- **Claude in chat**: the app pauses after transcribing with the request in `pick-prompt.txt`; the answer
+  goes in with `dokkpick.py <name> --answer <file>`, then Continue.
+- **Automatic (API)**: an Anthropic API key from console.anthropic.com, kept in ~/.dokkcast/anthropic_key.
+
 Progress is kept per episode, so the app can be closed and reopened at any point.
 
 The app's own name, logo, icon, fonts and colours are in brand.json under `studio` (Offcuts, by MBMS

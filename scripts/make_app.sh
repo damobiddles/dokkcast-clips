@@ -4,6 +4,12 @@
 # if this folder moves or the studio branding changes.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+case "$REPO/" in  # macOS keeps apps out of these folders, so the app couldn't start itself from there
+  "$HOME/Desktop/"*|"$HOME/Documents/"*|"$HOME/Downloads/"*)
+    echo "This folder is in Desktop, Documents or Downloads, which macOS won't let the app open."
+    echo "Move it first, e.g.:  mv \"$REPO\" ~/Offcuts  then run ~/Offcuts/scripts/make_app.sh"
+    exit 1;;
+esac
 # studio <key> <default>: a value from brand.json "studio" (colors.bg for nested ones)
 studio() { "$REPO/.venv/bin/python" - "$REPO/brand.json" "$@" <<'PY'
 import json, sys
@@ -24,7 +30,7 @@ cat > "$APP/Contents/MacOS/dokkcast" <<RUN
 #!/bin/bash
 # already running? just show it
 if curl -sf http://127.0.0.1:8765/api/state >/dev/null; then open http://127.0.0.1:8765/; exit 0; fi
-export PATH="/opt/homebrew/opt/ffmpeg-full/bin:/usr/local/opt/ffmpeg-full/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH"
+export PATH="\$HOME/.local/bin:/opt/homebrew/opt/ffmpeg-full/bin:/usr/local/opt/ffmpeg-full/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH"
 cd "$REPO"
 mkdir -p output
 # caffeinate keeps the Mac awake while it runs; the server opens the page itself

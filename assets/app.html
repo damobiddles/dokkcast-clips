@@ -65,9 +65,12 @@
   <div class="card" id="keycard">
     <h2>Clip picking</h2>
     <div class="row" style="margin-top:0">
-      <label class="opt"><input type="radio" name="mode" value="chat"> Claude in chat (free): the app pauses after transcribing and you ask Claude to pick the clips</label>
+      <label class="opt"><input type="radio" name="mode" value="mac"> Claude on this Mac (no extra cost): uses your own Claude account through Claude Code</label>
+      <label class="opt"><input type="radio" name="mode" value="chat"> Claude in chat: the app pauses after transcribing and you ask Claude to pick the clips</label>
       <label class="opt"><input type="radio" name="mode" value="api"> Automatic: the app asks Claude itself (needs an Anthropic API key, about 30p an episode)</label>
     </div>
+    <div id="macrow" class="dim" style="display:none;margin-top:10px">Claude Code isn't on this Mac yet. Once, in Terminal:
+      <code>curl -fsSL https://claude.ai/install.sh | bash</code>, then type <code>claude</code> and sign in with your Claude account.</div>
     <div id="keyrow" style="display:none">
       <div class="dim" style="margin-top:10px">Paste an Anthropic API key (console.anthropic.com, Settings, API keys). It's kept on this Mac only.</div>
       <div class="row"><input type="password" id="key" placeholder="sk-ant-..." style="flex:1;min-width:200px"><button id="savekey">Save key</button></div>
@@ -84,7 +87,7 @@
       <label>First post</label><input type="date" id="start">
       <label>Guest photo</label><div class="pick"><button data-choose="photo">Choose…</button><span class="path" id="p-photo">Optional, for the covers</span></div>
     </div>
-    <div class="row"><button class="primary" id="go">Start</button><span class="dim">Takes about 15 minutes, then the review page opens.</span></div>
+    <div class="row"><button class="primary" id="go">Start</button><span class="dim">Takes about 15 minutes, then the review opens here.</span></div>
   </div>
 
   <div id="eps"></div>
@@ -160,7 +163,7 @@ function status(ep) {
   if (ep.status === "error") return `<div class="status err">Stopped: ${esc(ep.error)}</div>`;
   if (ep.status === "done") return `<div class="status">Done. The zip is ready to share${ep.zip ? `: ${esc(base(ep.zip))}` : ""}.</div>`;
   if (ep.waiting === "picks") return `<div class="status">Transcribed. Now tell Claude in chat: <b>pick the clips for ${esc(ep.name)}</b>. When Claude says they're in, press Continue.</div>`;
-  if (ep.waiting === "review") return `<div class="status">Your turn: on the review page, watch the clips, set the music, edit the captions and tick Approve. Then press <b>Save my choices</b> there and <b>Make the clips</b> here.</div>`;
+  if (ep.waiting === "review") return `<div class="status">Your turn: open the review, watch the clips, set the music, edit the captions and tick Approve. Then press <b>Save and make the clips</b>.</div>`;
   const what = { prep: "Transcribing and finding the speakers (about 10 minutes)", pick: "Claude is picking the clips and writing the captions",
     review: "Planning the posting dates and building the review page", finish: "Rendering the clips with music, covers, kit and zip (about 20 minutes)" }[ep.step];
   return `<div class="status"><span class="spin"></span>${what || "Working"} …</div>`;
@@ -169,9 +172,9 @@ function actions(ep) {
   const b = [];
   if (ep.status === "error") b.push(`<button data-act="continue">Try again</button>`);
   if (ep.waiting === "picks") b.push(`<button class="primary" data-act="continue">Continue</button>`);
-  if (ep.waiting === "review") b.push(`<button data-act="open" data-what="review">Open review page</button>`, `<button class="primary" data-act="continue">Make the clips</button>`);
+  if (ep.waiting === "review") b.push(`<button class="primary" data-go="${esc(ep.review_url)}">Open the review</button>`);
   if (ep.status === "done") b.push(`<button class="primary" data-act="open" data-what="zip">Show zip in Finder</button>`,
-    `<button data-act="open" data-what="kit">Open posting kit</button>`, `<button data-act="reopen">Change and remake</button>`);
+    `<button data-go="${esc(ep.kit_url)}">Open posting kit</button>`, `<button data-act="reopen">Change and remake</button>`);
   if (!ep.running && ep.status !== "done") b.push(`<button data-act="photo">${ep.photo || ep.photo_set ? "Change" : "Add"} guest photo</button>`);
   b.push(`<button data-act="open" data-what="folder">Open folder</button>`);
   return b.join("");
@@ -179,6 +182,7 @@ function actions(ep) {
 function draw() {
   document.querySelectorAll("input[name=mode]").forEach(r => r.checked = r.value === state.mode);
   document.getElementById("keyrow").style.display = state.mode === "api" && !state.has_key ? "block" : "none";
+  document.getElementById("macrow").style.display = state.mode === "mac" && !state.has_claude ? "block" : "none";
   const s = document.getElementById("start"); if (!s.value) s.value = state.next_start;
   const box = document.getElementById("eps");
   const open = new Set([...box.querySelectorAll("details[open]")].map(d => d.dataset.name));
@@ -190,6 +194,7 @@ function draw() {
       <div class="row">${actions(ep)}</div>
       <details data-name="${esc(ep.name)}" ${open.has(ep.name) ? "open" : ""}><summary>Details</summary><pre>${esc(ep.log || "Nothing yet")}</pre></details>
     </div>`).join("");
+  box.querySelectorAll("[data-go]").forEach(b => b.onclick = () => location.href = b.dataset.go);
   box.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
     const name = b.closest(".card").dataset.name, act = b.dataset.act;
     if (act === "photo") {
@@ -201,8 +206,15 @@ function draw() {
     refresh();
   });
 }
+let seen = null;  // each episode's state at the last look, to notice when one becomes ready to review
 async function refresh() {
-  try { state = await (await fetch("/api/state")).json(); draw(); }
+  try {
+    state = await (await fetch("/api/state")).json();
+    const ready = state.episodes.find(ep => ep.waiting === "review" && seen && seen[ep.name] && seen[ep.name] !== "review");
+    seen = Object.fromEntries(state.episodes.map(ep => [ep.name, ep.waiting || ep.status]));
+    if (ready) return location.href = ready.review_url;  // straight on to the review when it's ready
+    draw();
+  }
   catch (e) { document.getElementById("eps").innerHTML = `<div class="card status err">The app has stopped. Open ${esc(STUDIO ? STUDIO.name : 'the app')} again.</div>`; }
 }
 refresh();
