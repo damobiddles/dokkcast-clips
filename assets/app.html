@@ -41,6 +41,7 @@
   .step.wait { border-color: var(--wait); color: var(--text); font-weight: 600; }
   .step.err { border-color: var(--warn); color: var(--warn); font-weight: 600; }
   .status { font-size: 14px; margin-top: 8px; }
+  .attn { border-color: var(--hi); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .status.err { color: var(--warn); }
   .ep-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
   .ep-head b { font-size: 16px; }
@@ -62,6 +63,7 @@
   <div><h1 id="name">Studio</h1><div class="sub" id="tagline"></div></div>
 </div></header>
 <main><div class="wrap">
+  <div class="card attn" id="attn" hidden></div>
   <div class="card" id="keycard">
     <h2>Clip picking</h2>
     <div class="row" style="margin-top:0">
@@ -190,6 +192,17 @@ function draw() {
   document.getElementById("keyrow").style.display = state.mode === "api" && !state.has_key ? "block" : "none";
   document.getElementById("macrow").style.display = state.mode === "mac" && state.claude_ready === false ? "block" : "none";
   const s = document.getElementById("start"); if (!s.value) s.value = state.next_start;
+  // whatever is waiting on you goes at the top, so it isn't missed under the form
+  const need = state.episodes.filter(ep => ep.status === "waiting" || ep.status === "error");
+  const attn = document.getElementById("attn");
+  attn.hidden = !need.length;
+  attn.innerHTML = need.map(ep => `<b>${esc(ep.guest || ep.name)}</b><span>${ep.status === "error" ? "stopped" :
+    ep.waiting === "picks" ? "is ready for you to press Continue" : "is ready to review"}</span>
+    <button class="primary" data-show="${esc(ep.name)}">Show me</button>`).join("<br>");
+  attn.querySelectorAll("[data-show]").forEach(b => b.onclick = () => {
+    const card = [...document.querySelectorAll("#eps .card")].find(c => c.dataset.name === b.dataset.show);
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   const box = document.getElementById("eps");
   const open = new Set([...box.querySelectorAll("details[open]")].map(d => d.dataset.name));
   box.innerHTML = state.episodes.map(ep => `<div class="card" data-name="${esc(ep.name)}">
