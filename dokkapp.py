@@ -453,6 +453,10 @@ class Handler(BaseHTTPRequestHandler):
             if b.get("go") and st.get("waiting") == "review" and name not in jobs:
                 st.update(step="finish", waiting=None); save_state(name, st); start(name)
             return {"ok": True}
+        if path == "/api/keep":  # changed their mind after Change and remake: keep what was made before
+            if st.get("waiting") == "review" and st.get("zip") and Path(st["zip"]).exists():
+                st.update(step="done", status="done", waiting=None); save_state(name, st)
+            return {"ok": True}
         if path == "/api/reopen":  # back to the review page, e.g. to change captions after rendering
             st.update(step="review", status="queued", waiting=None); save_state(name, st); start(name)
             return {"ok": True}

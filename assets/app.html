@@ -173,6 +173,7 @@ function actions(ep) {
   if (ep.status === "error") b.push(`<button data-act="continue">Try again</button>`);
   if (ep.waiting === "picks") b.push(`<button class="primary" data-act="continue">Continue</button>`);
   if (ep.waiting === "review") b.push(`<button class="primary" data-go="${esc(ep.review_url)}">Open the review</button>`);
+  if (ep.waiting === "review" && ep.zip) b.push(`<button data-act="keep">Keep the clips already made</button>`);
   if (ep.status === "done") b.push(`<button class="primary" data-act="open" data-what="zip">Show zip in Finder</button>`,
     `<button data-go="${esc(ep.kit_url)}">Open posting kit</button>`, `<button data-act="reopen">Change and remake</button>`);
   if (!ep.running && ep.status !== "done") b.push(`<button data-act="photo">${ep.photo || ep.photo_set ? "Change" : "Add"} guest photo</button>`);
