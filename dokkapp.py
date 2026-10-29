@@ -289,6 +289,7 @@ def episodes():
         st["log"] = lg.read_text()[-3000:] if lg.exists() else ""
         st["photo_set"] = (p.parent / "photo.jpg").exists()
         st["review_url"] = page(st["name"], "posts.html")
+        st["has_kit"] = (p.parent / "kit" / "kit.html").exists()
         st["kit_url"] = page(st["name"], "kit/kit.html")
         out.append(st)
     return out
@@ -454,7 +455,7 @@ class Handler(BaseHTTPRequestHandler):
                 st.update(step="finish", waiting=None); save_state(name, st); start(name)
             return {"ok": True}
         if path == "/api/keep":  # changed their mind after Change and remake: keep what was made before
-            if st.get("waiting") == "review" and st.get("zip") and Path(st["zip"]).exists():
+            if st.get("waiting") == "review" and (OUT / name / "kit" / "kit.html").exists():
                 st.update(step="done", status="done", waiting=None); save_state(name, st)
             return {"ok": True}
         if path == "/api/reopen":  # back to the review page, e.g. to change captions after rendering
