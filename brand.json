@@ -1,4 +1,18 @@
 {
+  "studio": {
+    "name": "Offcuts",
+    "tagline": "by MBMS Podcast Studio · one episode in, a month of marketing out",
+    "logo": "assets/studio/mbms-logo-for-dark-backgrounds.svg",
+    "icon": "assets/studio/mbms-icon-1024.png",
+    "fonts_css": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap",
+    "font": "Inter, system-ui, sans-serif",
+    "headline_font": "Poppins, Inter, sans-serif",
+    "colors": {"bg": "#17161C", "panel": "#24222B", "line": "#3A3842", "text": "#F3F0EA", "dim": "#AAA5B0", "track": "#34323C",
+               "accent": "#FF5A36", "on_accent": "#17161C", "field": "#17161C", "button": "#24222B", "button_line": "#F3F0EA",
+               "code": "#0E0D12", "ok": "#4CC37E", "warn": "#FF7A5C", "wait": "#F2B33D"},
+    "look": {"border": "1px", "shadow": "none", "radius": "12px", "button_radius": "999px", "button_border": "1.5px",
+             "button_shadow": "4px 4px 0 #F3F0EA", "scheme": "dark", "noise": true}
+  },
   "canvas": {
     "width": 1080,
     "height": 1920,
@@ -48,6 +62,142 @@
       "min_hold": 0.8,
       "lead": 0.15,
       "pan_seconds": 0.5
+    },
+    "square": {
+      "follow": false,
+      "crop": "auto",
+      "video_y_offset": -10,
+      "canvas": {
+        "width": 1080,
+        "height": 1080
+      },
+      "captions": {
+        "size": 62,
+        "max_chars": 28
+      },
+      "logo": {
+        "width": 200
+      },
+      "logo_center_y": 125,
+      "captions_center_y": 960
+    },
+    "landscape": {
+      "follow": false,
+      "crop": "auto",
+      "video_y_offset": 0,
+      "canvas": {
+        "width": 1920,
+        "height": 1080
+      },
+      "captions": {
+        "size": 66,
+        "max_chars": 34,
+        "shadow": 3,
+        "outline": 3
+      },
+      "logo": {
+        "width": 150
+      },
+      "logo_x": "W-w-56",
+      "logo_center_y": 125,
+      "captions_center_y": 950
+    }
+  },
+  "clips": {
+    "formats": {
+      "portrait": "speaker",
+      "square": "square",
+      "landscape": "landscape"
+    },
+    "music": {
+      "on": true,
+      "level_db": -12,
+      "duck_ratio": 2,
+      "fade": 1.0,
+      "offset_step": 30
+    }
+  },
+  "episode": {
+    "pause_max": 1.0,
+    "pause_keep": 0.4,
+    "fillers": [
+      "um",
+      "uh",
+      "uhm",
+      "umm",
+      "erm",
+      "er",
+      "ah",
+      "hmm",
+      "mm"
+    ],
+    "audio": "highpass=f=80,afftdn=nr=10:nf=-40:tn=1,deesser=i=0.3,acompressor=threshold=0.1:ratio=3:attack=10:release=150:makeup=2,loudnorm=I=-16:TP=-1.5:LRA=11",
+    "music": {
+      "dir": "assets/music",
+      "level_db": -24,
+      "intro_seconds": 20,
+      "outro_seconds": 20,
+      "fade": 3
+    },
+    "lower_third_seconds": 6,
+    "video": [
+      "-c:v",
+      "libx264",
+      "-crf",
+      "18",
+      "-preset",
+      "fast"
+    ],
+    "spellings": {
+      "doc cast": "Dokkcast",
+      "dock cast": "Dokkcast",
+      "dokcast": "Dokkcast",
+      "docast": "Dokkcast",
+      "u dock": "udokk",
+      "you dock": "udokk",
+      "dot cast": "Dokkcast",
+      "marston": "Marsden",
+      "marlston": "Marsden",
+      "sana banerjee": "Susana Banerjee",
+      "guiney": "gynae",
+      "gynic": "gynae"
+    }
+  },
+  "social": {
+    "platforms": [
+      "tiktok",
+      "instagram",
+      "youtube",
+      "linkedin"
+    ],
+    "shapes": {
+      "tiktok": "portrait",
+      "instagram": "portrait",
+      "youtube": "portrait",
+      "linkedin": "square"
+    },
+    "tz": "Europe/London",
+    "time": "12:00",
+    "days": "mon,tue,wed,thu,fri",
+    "channels": {},
+    "settings": {
+      "tiktok": {
+        "privacy_level": "PUBLIC_TO_EVERYONE",
+        "content_posting_method": "DIRECT_POST",
+        "duet": false,
+        "stitch": false,
+        "comment": true,
+        "autoAddMusic": "no",
+        "brand_content_toggle": false,
+        "brand_organic_toggle": false
+      },
+      "instagram": {
+        "post_type": "post"
+      },
+      "youtube": {
+        "type": "public"
+      },
+      "linkedin": {}
     }
   }
 }

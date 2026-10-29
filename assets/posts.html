@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review</title>
+<style>
+  :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --ok: #7be0a6; --warn: #ff8a8a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0; }
+  .summary { color: var(--dim); font-size: 13px; margin-top: 4px; }
+  main { padding: 0 16px 90px; }
+  .post { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 14px 0; display: grid; grid-template-columns: 200px 1fr; gap: 14px; }
+  .post.off { opacity: .6; }
+  .post.ok { border-color: var(--ok); }
+  @media (max-width: 640px) { .post { grid-template-columns: 1fr; } }
+  video { width: 100%; aspect-ratio: 9 / 16; background: #000; border-radius: 8px; object-fit: contain; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .head b { font-size: 16px; }
+  label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  label.approve { margin-left: auto; font-weight: 600; }
+  .pl { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
+  .pl.off textarea, .pl.off input[type=text] { opacity: .45; }
+  .tag { font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--dim); }
+  .tag.sent { border-color: var(--ok); color: var(--ok); }
+  .count { color: var(--dim); font-size: 12px; margin-left: auto; font-variant-numeric: tabular-nums; }
+  .count.over { color: var(--warn); }
+  textarea, input[type=text], input[type=datetime-local] { width: 100%; background: #0d1233; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 14px; }
+  input[type=datetime-local] { width: auto; color-scheme: dark; }
+  textarea { min-height: 84px; resize: vertical; margin-top: 6px; }
+  input[type=text] { margin-top: 6px; }
+  button { background: #222a5c; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  button:hover { border-color: var(--hi); }
+  button.primary { background: var(--hi); color: #0A0F2C; border: 0; font-weight: 600; padding: 8px 14px; }
+  footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--bg); border-top: 1px solid var(--line); padding: 10px 16px; }
+  footer .wrap { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #msg { color: var(--dim); font-size: 13px; }
+  .mix { display: none; margin-top: 10px; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+  .mix input[type=range] { width: 220px; accent-color: var(--hi); }
+  .mix b { font-variant-numeric: tabular-nums; min-width: 52px; }
+  .mix .note { color: var(--dim); font-size: 12px; flex-basis: 100%; }
+  button.on { border-color: var(--hi); color: var(--hi); }
+  #back { color: var(--hi); font-size: 13px; }
+</style>
+</head>
+<body data-page="Review">
+<header><div class="wrap">
+  <h1 id="title">Posts</h1>
+  <div class="summary" id="summary"></div>
+  <div class="mix" id="mix"><span>Music</span>
+    <input type="range" id="level" min="-30" max="0" step="1"><b id="db"></b><span class="tag" id="track"></span>
+    <span class="note">Plays each clip from the episode with the track underneath at this level, so you can set the mix by ear.
+      The clips are rendered at the level you save. A bit of ducking under speech is added when rendering.</span></div>
+</div></header>
+<main><div class="wrap" id="posts"></div></main>
+<footer><div class="wrap">
+  <button class="primary" id="make" hidden>Save and make the clips</button>
+  <button class="primary" id="save">Save my choices</button>
+  <button id="all">Approve all</button>
+  <a id="back" href="/" hidden>Back to the app</a>
+  <span id="msg">Saves posts.json to Downloads. Nothing is posted until you've approved it here.</span>
+</div></footer>
+<script>
+const D = /*POSTS*/null;
+const NAMES = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube Shorts", linkedin: "LinkedIn" };
+const LIMIT = { tiktok: 2200, instagram: 2200, youtube: 5000, linkedin: 3000, youtube_title: 100 };
+const M = D.music;  // {src, name, db} when there's a music track
+const music = M ? new Audio(M.src) : null;
+if (music) music.loop = true;
+const vol = db => Math.min(1, Math.pow(10, db / 20));
+if (M) {
+  const lv = document.getElementById("level"), out = document.getElementById("db");
+  document.getElementById("mix").style.display = "flex";
+  document.getElementById("track").textContent = M.name;
+  const show = () => { out.textContent = `${M.db} dB`; lv.value = M.db; music.volume = vol(M.db); };
+  lv.oninput = () => { M.db = +lv.value; show(); };
+  show();
+}
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+document.getElementById("title").textContent = "Posts: " + D.episode;
+
+function summary() {
+  const ok = D.posts.filter(p => p.approved);
+  const n = ok.reduce((k, p) => k + Object.values(p.platforms).filter(Boolean).length, 0);
+  document.getElementById("summary").textContent =
+    `${ok.length} of ${D.posts.length} clips approved (${n} posts). Times are ${D.tz}.`;
+}
+
+function counter(el, box, limit) {
+  const f = () => { box.textContent = `${el.value.length} / ${limit}`; box.classList.toggle("over", el.value.length > limit); };
+  el.addEventListener("input", f); f();
+}
+
+const list = document.getElementById("posts");
+function draw() {
+  list.innerHTML = "";
+  for (const p of D.posts) {
+    const sent = p.sent || {};
+    const d = document.createElement("div");
+    d.className = "post" + (p.approved ? " ok" : " off");
+    const first = Object.keys(p.platforms)[0];
+    const mixable = M && p.src;
+    d.innerHTML = `<div><video controls preload="metadata" src="${esc(mixable ? p.src : p.files[first])}"></video>
+        <div class="row" style="margin-top:6px">${mixable ? `<button data-mix class="on">with music</button>` : ""}${[...new Set(Object.values(D.shapes))].map(s =>
+          `<button data-shape="${s}">${s}</button>`).join("")}</div></div>
+      <div><div class="row head"><b>Clip ${p.clip}</b><span>${esc(p.title)}</span>
+        <label class="approve"><input type="checkbox" class="ap" ${p.approved ? "checked" : ""}> Approve</label></div>
+        <div class="row" style="margin-top:6px"><span class="tag">Goes out</span>
+          <input type="datetime-local" class="when" value="${esc(p.when.replace(" ", "T"))}"></div>
+        <div class="pls"></div></div>`;
+    const v = d.querySelector("video");
+    const btns = d.querySelectorAll("button[data-mix], button[data-shape]");
+    const pick = b => btns.forEach(x => x.classList.toggle("on", x === b));
+    let mixing = mixable;
+    d.querySelectorAll("[data-shape]").forEach(b => b.onclick = () => {
+      const pl = Object.keys(D.shapes).find(k => D.shapes[k] === b.dataset.shape);
+      mixing = false; music && music.pause(); v.src = p.files[pl]; pick(b);
+    });
+    const mb = d.querySelector("[data-mix]");
+    if (mb) mb.onclick = () => { mixing = true; v.src = p.src; pick(mb); };
+    if (mixable) {
+      // keep the track in step with the clip: it starts p.music_at seconds in, like the render
+      const s0 = parseFloat(p.src.split("#t=")[1]);
+      const sync = () => {
+        const len = music.duration || 0, at = p.music_at + Math.max(0, v.currentTime - s0);
+        music.currentTime = len ? at % Math.max(len - 5, 1) : 0;
+      };
+      v.addEventListener("play", () => {
+        if (!mixing) return;
+        document.querySelectorAll("video").forEach(o => o !== v && o.pause());
+        sync(); music.play();
+      });
+      v.addEventListener("pause", () => mixing && music.pause());
+      // only while this clip plays: loading a clip at its #t= start also fires seeked
+      v.addEventListener("seeked", () => mixing && !v.paused && sync());
+    }
+    d.querySelector(".ap").onchange = e => { p.approved = e.target.checked; d.className = "post" + (p.approved ? " ok" : " off"); summary(); };
+    d.querySelector(".when").onchange = e => p.when = e.target.value.replace("T", " ");
+    const pls = d.querySelector(".pls");
+    for (const pl of Object.keys(p.platforms)) {
+      const r = document.createElement("div");
+      r.className = "pl" + (p.platforms[pl] ? "" : " off");
+      const isSent = !!sent[pl];
+      r.innerHTML = `<div class="row"><label><input type="checkbox" ${p.platforms[pl] ? "checked" : ""} ${isSent ? "disabled" : ""}> ${NAMES[pl] || pl}</label>
+          <span class="tag">${esc(D.shapes[pl])}</span>${isSent ? `<span class="tag sent">scheduled</span>` : ""}<span class="count"></span></div>
+        ${pl === "youtube" ? `<input type="text" class="yt" placeholder="Video title" value="${esc(p.copy.youtube_title)}">` : ""}
+        <textarea ${isSent ? "disabled" : ""}>${esc(p.copy[pl])}</textarea>`;
+      r.querySelector("input[type=checkbox]").onchange = e => { p.platforms[pl] = e.target.checked; r.classList.toggle("off", !e.target.checked); summary(); };
+      const t = r.querySelector("textarea");
+      t.oninput = () => p.copy[pl] = t.value;
+      counter(t, r.querySelector(".count"), LIMIT[pl] || 2200);
+      const yt = r.querySelector(".yt");
+      if (yt) { yt.oninput = () => p.copy.youtube_title = yt.value; yt.disabled = isSent; }
+      pls.appendChild(r);
+    }
+    list.appendChild(d);
+  }
+  summary();
+}
+draw();
+
+document.getElementById("all").onclick = () => { D.posts.forEach(p => p.approved = true); draw(); };
+// opened through the app: save straight back to it, no Downloads
+const APP = location.protocol.startsWith("http");
+const msg = document.getElementById("msg");
+if (APP) {
+  document.getElementById("save").classList.remove("primary");
+  ["make", "back"].forEach(id => document.getElementById(id).hidden = false);
+  msg.textContent = "Make the clips when you're happy. Nothing is posted from here.";
+}
+function choices() {
+  const out = JSON.parse(JSON.stringify(D));
+  delete out.shapes; out.posts.forEach(p => { delete p.files; delete p.src; delete p.music_at; });
+  if (M) out.music_db = M.db;
+  delete out.music;
+  return out;
+}
+async function toApp(go) {
+  const r = await fetch("/api/save", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: D.episode, posts: choices(), go }) });
+  if (!r.ok) { msg.textContent = "Couldn't save: " + ((await r.json()).error || "is the app still open?"); return; }
+  if (go) { music && music.pause(); location.href = "/"; }
+  else msg.textContent = "Saved. Make the clips when you're ready.";
+}
+document.getElementById("make").onclick = () => {
+  const n = D.posts.filter(p => p.approved).length;
+  if (!n) { msg.textContent = "Tick Approve on the clips to make first."; return; }
+  toApp(true);
+};
+document.getElementById("save").onclick = () => {
+  if (APP) return toApp(false);
+  const out = choices();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: "application/json" }));
+  a.download = "posts.json"; a.click();
+  document.getElementById("msg").textContent = "Saved posts.json to Downloads. Tell me in the chat when you're done.";
+};
+</script>
+<!--STUDIO-->
+</body>
+</html>

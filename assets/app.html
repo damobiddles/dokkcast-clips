@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offcuts</title>
+<style>
+  :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --ok: #7be0a6; --warn: #ff8a8a; --wait: #ffd27a; --field: #0d1233; --button: #222a5c; --code: #070b22; --bw: 1px; --shadow: none; --radius: 10px; --scheme: dark; --head: inherit; --track: var(--line); }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color-scheme: var(--scheme); }
+  body.noise { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .38 0 0 0 0 .36 0 0 0 0 .33 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  header { padding: 18px 16px; border-bottom: 1px solid var(--line); }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 32px; line-height: 1.1; margin: 0; font-family: var(--head); }
+  .brand { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .brand img { height: 96px; width: auto; max-width: 300px; object-fit: contain; }
+  @media (max-width: 600px) { .brand img { height: 64px; } }
+  h2 { font-size: 16px; margin: 0 0 10px; font-family: var(--head); }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
+  main { padding: 0 16px 60px; }
+  .card { background: var(--panel); border: var(--bw) solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin: 16px 0; }
+  .grid { display: grid; grid-template-columns: 150px 1fr; gap: 10px 12px; align-items: center; }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+  .grid label { color: var(--dim); font-size: 14px; }
+  .pick { display: flex; gap: 8px; align-items: center; min-width: 0; }
+  .path { color: var(--dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .path.set { color: var(--text); }
+  input[type=text], input[type=date], input[type=password] { width: 100%; background: var(--field); color: var(--text); border: var(--bw) solid var(--line);
+    border-radius: 10px; padding: 7px 9px; font: inherit; font-size: 14px; color-scheme: var(--scheme); }
+  input:focus { outline: 2px solid var(--hi); outline-offset: 1px; }
+  button { background: var(--button); color: var(--text); border: var(--btn-bw, var(--bw)) solid var(--btn-line, var(--line)); border-radius: var(--btn-radius, 6px); padding: 7px 14px;
+    font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  button { transition: transform .12s, box-shadow .12s; }
+  button:hover { border-color: var(--hi); }
+  button.primary { background: var(--hi); color: var(--on-hi, #0A0F2C); border: var(--btn-bw, 0) solid var(--btn-line, transparent); font-weight: 700; padding: 9px 18px; font-family: var(--head); }
+  button.primary:hover { border-color: var(--btn-line, transparent); transform: translate(-2px, -2px); box-shadow: var(--btn-shadow, none); }
+  button:disabled { opacity: .5; cursor: default; }
+  .opt { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; flex-basis: 100%; cursor: pointer; }
+  .opt input { margin-top: 3px; accent-color: var(--hi); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 0 4px; }
+  .step { border-top: 3px solid var(--track); padding-top: 6px; font-size: 13px; color: var(--dim); }
+  .step.done { border-color: var(--ok); color: var(--text); }
+  .step.now { border-color: var(--hi); color: var(--text); font-weight: 600; }
+  .step.wait { border-color: var(--wait); color: var(--text); font-weight: 600; }
+  .step.err { border-color: var(--warn); color: var(--warn); font-weight: 600; }
+  .status { font-size: 14px; margin-top: 8px; }
+  .attn { border-color: var(--hi); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .attn[hidden] { display: none; }
+  .status.err { color: var(--warn); }
+  .ep-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .ep-head b { font-size: 16px; }
+  .dim { color: var(--dim); font-size: 13px; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--dim); font-size: 13px; }
+  pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 12px; max-height: 220px;
+    overflow: auto; white-space: pre-wrap; margin: 6px 0 0; }
+  .spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--hi); border-right-color: transparent; border-radius: 50%;
+    animation: r 1s linear infinite; margin-right: 6px; }
+  @keyframes r { to { transform: rotate(360deg); } }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--warn); color: #fff; padding: 8px 14px;
+    border-radius: 8px; font-weight: 600; display: none; max-width: 90vw; }
+</style>
+</head>
+<body>
+<header><div class="wrap brand">
+  <img id="logo" alt="" hidden>
+  <div><h1 id="name">Studio</h1><div class="sub" id="tagline"></div></div>
+</div></header>
+<main><div class="wrap">
+  <div class="card attn" id="attn" hidden></div>
+  <div class="card" id="keycard">
+    <h2>Clip picking</h2>
+    <div class="row" style="margin-top:0">
+      <label class="opt"><input type="radio" name="mode" value="mac"> Claude on this Mac (no extra cost): uses your own Claude account through Claude Code</label>
+      <label class="opt"><input type="radio" name="mode" value="chat"> Claude in chat: the app pauses after transcribing and you ask Claude to pick the clips</label>
+      <label class="opt"><input type="radio" name="mode" value="api"> Automatic: the app asks Claude itself (needs an Anthropic API key, about 30p an episode)</label>
+    </div>
+    <div id="macrow" class="dim" style="display:none;margin-top:10px">Claude Code isn't signed in on this Mac yet. Once, in Terminal:
+      <code>curl -fsSL https://claude.ai/install.sh | bash</code>, then type <code>claude</code> and sign in with your Claude account.</div>
+    <div id="keyrow" style="display:none">
+      <div class="dim" style="margin-top:10px">Paste an Anthropic API key (console.anthropic.com, Settings, API keys). It's kept on this Mac only.</div>
+      <div class="row"><input type="password" id="key" placeholder="sk-ant-..." style="flex:1;min-width:200px"><button id="savekey">Save key</button></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>New episode</h2>
+    <div class="grid">
+      <label>Episode video</label><div class="pick"><button data-choose="video">Choose…</button><span class="path" id="p-video">No file chosen</span></div>
+      <label>Music track</label><div class="pick"><button data-choose="music">Choose…</button><span class="path" id="p-music">None (no music)</span></div>
+      <label>Guest name</label><input type="text" id="guest" placeholder="Prof. John Deanfield">
+      <label>Guest's job</label><input type="text" id="role" placeholder="Consultant Cardiologist">
+      <label>First post</label><input type="date" id="start">
+      <label>Guest photo</label><div class="pick"><button data-choose="photo">Choose…</button><span class="path" id="p-photo">Optional, for the covers</span></div>
+    </div>
+    <div class="row"><button class="primary" id="go">Start</button><span class="dim">Takes about 15 minutes, then the review opens here.</span></div>
+  </div>
+
+  <div id="eps"></div>
+</div></main>
+<div id="toast"></div>
+<script>
+// the studio's own look (brand.json "studio"); the clips keep each show's branding
+const STUDIO = /*STUDIO*/null;
+if (STUDIO) {
+  const c = STUDIO.colors || {}, r = document.documentElement.style;
+  const look = STUDIO.look || {};
+  for (const [k, v] of Object.entries({ bg: c.bg, panel: c.panel, line: c.line, text: c.text, dim: c.dim, hi: c.accent, "on-hi": c.on_accent,
+      field: c.field, button: c.button, track: c.track, code: c.code, ok: c.ok, warn: c.warn, wait: c.wait,
+      bw: look.border, shadow: look.shadow, radius: look.radius, scheme: look.scheme, head: STUDIO.headline_font,
+      "btn-radius": look.button_radius, "btn-bw": look.button_border, "btn-line": c.button_line, "btn-shadow": look.button_shadow }))
+    if (v) r.setProperty("--" + k, v);
+  if (look.noise) document.body.classList.add("noise");  // the MBMS paper grain
+  if (STUDIO.fonts_css) { const f = document.createElement("link"); f.rel = "stylesheet"; f.href = STUDIO.fonts_css; document.head.appendChild(f); }
+  if (STUDIO.font) document.body.style.fontFamily = STUDIO.font;
+  document.title = STUDIO.name;
+  document.getElementById("name").textContent = STUDIO.name;
+  document.getElementById("tagline").textContent = STUDIO.tagline || "";
+  if (STUDIO.logo) { const l = document.getElementById("logo"); l.onload = () => l.hidden = false; l.src = "/logo"; }
+}
+const STEPS = [["prep", "Transcribe"], ["pick", "Pick clips"], ["review", "Review"], ["finish", "Clips, covers, zip"]];
+const pick = { video: null, music: null, photo: null };
+let state = null;
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const base = p => p ? p.split("/").pop() : "";
+
+function toast(msg, good) {
+  const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block";
+  t.style.background = good ? "var(--ok)" : "var(--warn)";
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = "none", 5000);
+}
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const j = await r.json();
+  if (!r.ok) { toast(j.error || "Something went wrong"); throw new Error(j.error); }
+  return j;
+}
+
+document.querySelectorAll("[data-choose]").forEach(b => b.onclick = async () => {
+  const kind = b.dataset.choose, { path } = await post("/api/choose", { kind });
+  if (!path) return;
+  pick[kind] = path;
+  const el = document.getElementById("p-" + kind); el.textContent = base(path); el.title = path; el.classList.add("set");
+});
+document.getElementById("go").onclick = async () => {
+  if (!pick.video) return toast("Choose the episode video first");
+  const { name, warning } = await post("/api/new", { video: pick.video, music: pick.music, photo: pick.photo,
+    guest: document.getElementById("guest").value, role: document.getElementById("role").value,
+    start: document.getElementById("start").value });
+  pick.video = pick.music = pick.photo = null;
+  ["video", "music", "photo"].forEach(k => { const el = document.getElementById("p-" + k); el.classList.remove("set"); });
+  document.getElementById("p-video").textContent = "No file chosen";
+  document.getElementById("p-music").textContent = "None (no music)";
+  document.getElementById("p-photo").textContent = "Optional, for the covers";
+  ["guest", "role"].forEach(id => document.getElementById(id).value = "");
+  await refresh();
+  if (warning) toast(`Started ${name}, but the photo didn't come through: ${warning}. Use Add guest photo on its card.`);
+  else toast(`Started ${name}. Its progress is below; the form is clear for the next episode.`, true);
+  const card = [...document.querySelectorAll("#eps .card")].find(c => c.dataset.name === name);
+  if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+};
+document.querySelectorAll("input[name=mode]").forEach(r => r.onchange = async () => { await post("/api/mode", { pick: r.value }); refresh(); });
+document.getElementById("savekey").onclick = async () => {
+  const key = document.getElementById("key").value.trim();
+  if (!key) return;
+  await post("/api/key", { key }); document.getElementById("key").value = ""; refresh();
+};
+
+function stepClass(ep, i) {
+  const at = ep.step === "done" ? 4 : STEPS.findIndex(s => s[0] === ep.step);
+  if (i < at) return "done";
+  if (i > at) return "";
+  return ep.status === "error" ? "err" : ep.status === "waiting" ? "wait" : "now";
+}
+function status(ep) {
+  if (ep.status === "error") return `<div class="status err">Stopped: ${esc(ep.error)}</div>`;
+  if (ep.status === "done") return `<div class="status">Done. The zip is ready to share${ep.zip ? `: ${esc(base(ep.zip))}` : ""}.</div>`;
+  if (ep.waiting === "picks") return `<div class="status">Transcribed. Now tell Claude in chat: <b>pick the clips for ${esc(ep.name)}</b>. When Claude says they're in, press Continue.</div>`;
+  if (ep.waiting === "review") return `<div class="status">Your turn: open the review, watch the clips, set the music, edit the captions and tick Approve. Then press <b>Save and make the clips</b>.</div>`;
+  const what = { prep: "Transcribing and finding the speakers (about 10 minutes)", pick: "Claude is picking the clips and writing the captions",
+    review: "Planning the posting dates and building the review page", finish: "Rendering the clips with music, covers, kit and zip (about 20 minutes)" }[ep.step];
+  return `<div class="status"><span class="spin"></span>${what || "Working"} …</div>`;
+}
+function actions(ep) {
+  const b = [];
+  if (ep.status === "error") b.push(`<button data-act="continue">Try again</button>`);
+  if (ep.waiting === "picks") b.push(`<button class="primary" data-act="continue">Continue</button>`);
+  if (ep.waiting === "review") b.push(`<button class="primary" data-go="${esc(ep.review_url)}">Open the review</button>`);
+  if (ep.waiting === "review" && ep.has_kit) b.push(`<button data-act="keep">Keep the clips already made</button>`);
+  if (ep.status === "done") b.push(`<button class="primary" data-act="open" data-what="zip">Show zip in Finder</button>`,
+    `<button data-go="${esc(ep.kit_url)}">Open posting kit</button>`, `<button data-act="reopen">Change and remake</button>`);
+  if (!ep.running && ep.status !== "done") b.push(`<button data-act="photo">${ep.photo || ep.photo_set ? "Change" : "Add"} guest photo</button>`);
+  b.push(`<button data-act="open" data-what="folder">Open folder</button>`);
+  return b.join("");
+}
+function draw() {
+  document.querySelectorAll("input[name=mode]").forEach(r => r.checked = r.value === state.mode);
+  document.getElementById("keyrow").style.display = state.mode === "api" && !state.has_key ? "block" : "none";
+  document.getElementById("macrow").style.display = state.mode === "mac" && state.claude_ready === false ? "block" : "none";
+  const s = document.getElementById("start"); if (!s.value) s.value = state.next_start;
+  // whatever is waiting on you goes at the top, so it isn't missed under the form
+  const need = state.episodes.filter(ep => ep.status === "waiting" || ep.status === "error");
+  const attn = document.getElementById("attn");
+  attn.hidden = !need.length;
+  attn.innerHTML = need.map(ep => `<b>${esc(ep.guest || ep.name)}</b><span>${ep.status === "error" ? "stopped" :
+    ep.waiting === "picks" ? "is ready for you to press Continue" : "is ready to review"}</span>
+    <button class="primary" data-show="${esc(ep.name)}">Show me</button>`).join("<br>");
+  attn.querySelectorAll("[data-show]").forEach(b => b.onclick = () => {
+    const card = [...document.querySelectorAll("#eps .card")].find(c => c.dataset.name === b.dataset.show);
+    if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  const box = document.getElementById("eps");
+  const open = new Set([...box.querySelectorAll("details[open]")].map(d => d.dataset.name));
+  box.innerHTML = state.episodes.map(ep => `<div class="card" data-name="${esc(ep.name)}">
+      <div class="ep-head"><b>${esc(ep.guest || ep.name)}</b><span class="dim">${esc(ep.role || "")}</span>
+        <span class="dim" style="margin-left:auto">${esc(base(ep.video))}${ep.music ? " · " + esc(base(ep.music)) : ""}</span></div>
+      <div class="steps">${STEPS.map((st, i) => `<div class="step ${stepClass(ep, i)}">${st[1]}</div>`).join("")}</div>
+      ${status(ep)}
+      <div class="row">${actions(ep)}</div>
+      <details data-name="${esc(ep.name)}" ${open.has(ep.name) ? "open" : ""}><summary>Details</summary><pre>${esc(ep.log || "Nothing yet")}</pre></details>
+    </div>`).join("");
+  box.querySelectorAll("[data-go]").forEach(b => b.onclick = () => location.href = b.dataset.go);
+  box.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
+    const name = b.closest(".card").dataset.name, act = b.dataset.act;
+    if (act === "photo") {
+      const { path } = await post("/api/choose", { kind: "photo" });
+      if (path) await post("/api/set", { name, photo: path });
+    } else {
+      await post("/api/" + act, { name, what: b.dataset.what });
+    }
+    refresh();
+  });
+}
+let seen = null;  // each episode's state at the last look, to notice when one becomes ready to review
+async function refresh() {
+  try {
+    state = await (await fetch("/api/state")).json();
+    const ready = state.episodes.find(ep => ep.waiting === "review" && seen && seen[ep.name] && seen[ep.name] !== "review");
+    seen = Object.fromEntries(state.episodes.map(ep => [ep.name, ep.waiting || ep.status]));
+    if (ready) return location.href = ready.review_url;  // straight on to the review when it's ready
+    draw();
+  }
+  catch (e) { document.getElementById("eps").innerHTML = `<div class="card status err">The app has stopped. Open ${esc(STUDIO ? STUDIO.name : 'the app')} again.</div>`; }
+}
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

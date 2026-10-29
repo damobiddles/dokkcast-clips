@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Posting kit</title>
+<style>
+  :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --ok: #7be0a6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0; }
+  .summary { color: var(--dim); font-size: 13px; margin-top: 4px; }
+  main { padding: 0 16px 40px; }
+  .post { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 14px 0; }
+  .post.done { opacity: .55; }
+  .head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .head b { font-size: 16px; }
+  .dir { color: var(--dim); font-size: 12px; margin-left: auto; font-family: ui-monospace, monospace; }
+  .pls { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-top: 10px; }
+  .pl { border: var(--bw, 1px) solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .pl.done { border-color: var(--ok); }
+  .pl.done video { opacity: .5; }
+  video { width: 100%; max-height: 300px; background: #000; border-radius: 6px; object-fit: contain; }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .name { font-weight: 600; }
+  .tag { font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--dim); }
+  .cap { font-size: 13px; color: var(--dim); white-space: pre-wrap; max-height: 5.8em; overflow: hidden; }
+  button, a.btn { background: #222a5c; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer; text-decoration: none; }
+  button:hover, a.btn:hover { border-color: var(--hi); }
+  button.copied { border-color: var(--ok); color: var(--ok); }
+  label { display: flex; gap: 6px; align-items: center; cursor: pointer; font-size: 13px; margin-left: auto; }
+</style>
+</head>
+<body data-page="Posting kit">
+<header><div class="wrap">
+  <h1 id="title">Posting kit</h1>
+  <div class="summary" id="summary"></div>
+</div></header>
+<main><div class="wrap" id="posts"></div></main>
+<script>
+const D = /*POSTS*/null;
+const NAMES = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube Shorts", linkedin: "LinkedIn" };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const KEY = "dokkkit:" + D.episode;
+let done = {};
+try { done = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(done)); } catch (e) {} };
+document.getElementById("title").textContent = "Posting kit: " + D.episode;
+
+function summary() {
+  const all = D.posts.flatMap(p => Object.keys(p.files).map(pl => p.clip + ":" + pl));
+  const n = all.filter(k => done[k]).length;
+  document.getElementById("summary").textContent =
+    `${n} of ${all.length} posted or scheduled. Times are ${D.tz}. Videos are in output/${D.episode}/kit/, one folder per post.`;
+}
+
+async function copy(btn, text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); }
+  const was = btn.textContent; btn.textContent = "Copied"; btn.classList.add("copied");
+  setTimeout(() => { btn.textContent = was; btn.classList.remove("copied"); }, 1200);
+}
+
+const list = document.getElementById("posts");
+for (const p of D.posts) {
+  const when = new Date(p.when.replace(" ", "T"));
+  const d = document.createElement("div");
+  d.className = "post";
+  d.innerHTML = `<div class="head"><b>${when.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}
+      ${esc(p.when.slice(11))}</b><span>Clip ${p.clip}: ${esc(p.title)}</span><span class="dir">kit/${esc(p.dir)}/</span></div>
+    <div class="pls"></div>`;
+  const pls = d.querySelector(".pls");
+  const mark = () => d.classList.toggle("done", Object.keys(p.files).every(pl => done[p.clip + ":" + pl]));
+  for (const pl of Object.keys(p.files)) {
+    const k = p.clip + ":" + pl;
+    const r = document.createElement("div");
+    r.className = "pl" + (done[k] ? " done" : "");
+    r.innerHTML = `<div class="row"><span class="name">${NAMES[pl] || pl}</span><span class="tag">${esc(D.shapes[pl])}</span>
+        <label><input type="checkbox" ${done[k] ? "checked" : ""}> Done</label></div>
+      <video controls preload="metadata" src="${esc(encodeURI(p.files[pl]))}"></video>
+      ${pl === "youtube" ? `<div class="cap"><b>${esc(p.copy.youtube_title)}</b></div>` : ""}
+      <div class="cap">${esc(p.copy[pl])}</div>
+      <div class="row">${pl === "youtube" ? `<button class="t">Copy title</button>` : ""}<button class="c">Copy caption</button>
+        <a class="btn" href="${esc(D.upload[pl])}" target="_blank" rel="noopener">Open ${NAMES[pl] || pl}</a></div>`;
+    r.querySelector(".c").onclick = e => copy(e.target, p.copy[pl]);
+    const t = r.querySelector(".t");
+    if (t) t.onclick = e => copy(e.target, p.copy.youtube_title);
+    r.querySelector("input").onchange = e => { done[k] = e.target.checked; r.classList.toggle("done", e.target.checked); save(); mark(); summary(); };
+    pls.appendChild(r);
+  }
+  mark();
+  list.appendChild(d);
+}
+summary();
+</script>
+<!--STUDIO-->
+</body>
+</html>

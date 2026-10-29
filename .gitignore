@@ -2,3 +2,7 @@ input/
 output/
 models/
 __pycache__/
+assets/music/*
+!assets/music/.gitkeep
+.venv/
+assets/studio/
