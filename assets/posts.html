@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dokkcast posts</title>
+<title>Review</title>
 <style>
   :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --ok: #7be0a6; --warn: #ff8a8a; }
   * { box-sizing: border-box; }
@@ -46,7 +46,7 @@
   #back { color: var(--hi); font-size: 13px; }
 </style>
 </head>
-<body>
+<body data-page="Review">
 <header><div class="wrap">
   <h1 id="title">Posts</h1>
   <div class="summary" id="summary"></div>
@@ -199,5 +199,6 @@ document.getElementById("save").onclick = () => {
   document.getElementById("msg").textContent = "Saved posts.json to Downloads. Tell me in the chat when you're done.";
 };
 </script>
+<!--STUDIO-->
 </body>
 </html>

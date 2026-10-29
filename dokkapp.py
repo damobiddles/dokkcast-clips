@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dokkcast Studio: the whole episode-to-posts routine as a small app on this Mac.
+"""Offcuts, the studio app: the whole episode-to-posts routine as a small app on this Mac.
 
     python dokkapp.py            # opens http://127.0.0.1:8765 in the browser
 
@@ -34,7 +34,7 @@ jobs = {}  # name -> running thread
 def studio():
     """The app's own name, logo and colours, from brand.json "studio"."""
     b = json.loads((ROOT / "brand.json").read_text())
-    return dict({"name": "Dokkcast Studio"}, **b.get("studio", {}))
+    return dict({"name": "Offcuts"}, **b.get("studio", {}))
 
 
 def state_path(name):
@@ -115,6 +115,39 @@ def settings():
 def claude_cli():
     from dokkpick import claude_cli as find
     return find()
+
+
+login = {"ok": None, "at": 0}  # is Claude Code signed in? checked in the background, at most once a minute
+
+
+def claude_ready():
+    """True when Claude Code answers, False when it's missing or not signed in, None while checking."""
+    if login["ok"] or not claude_cli():
+        return bool(login["ok"]) if claude_cli() else False
+    if datetime.now().timestamp() - login["at"] > 60:
+        login["at"] = datetime.now().timestamp()
+
+        def check():
+            env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+            try:
+                r = subprocess.run([claude_cli(), "-p", "--output-format", "json", "--no-session-persistence"],
+                                   input="Reply with the word ok.", capture_output=True, text=True, timeout=120,
+                                   cwd=Path.home(), env=env)
+                login["ok"] = r.returncode == 0 and not json.loads(r.stdout or "{}").get("is_error")
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                login["ok"] = False
+        threading.Thread(target=check, daemon=True).start()
+    return login["ok"]
+
+
+def readable(path, what):
+    """macOS keeps apps out of Desktop, Documents and Downloads until allowed: say so plainly."""
+    try:
+        with open(path, "rb") as f:
+            f.read(1)
+    except PermissionError:
+        raise ValueError(f"macOS isn't letting the app read the {what} there. Put it in your Movies folder "
+                         "(or allow the app in System Settings, Privacy & Security, Files and Folders)")
 
 
 def pick_mode():
@@ -283,6 +316,10 @@ class Handler(BaseHTTPRequestHandler):
                 ".svg": "image/svg+xml"}.get(f.suffix.lower(), "application/octet-stream")
         if html_rewrite and f.suffix.lower() == ".html":
             return self.send(200, html_rewrite(f.read_text()).encode(), kind)
+        try:
+            fh = open(f, "rb")
+        except PermissionError:  # macOS privacy: the app hasn't been allowed into that folder
+            return self.send(403, b"macOS isn't letting the app read this file", "text/plain")
         size = f.stat().st_size
         start, end = 0, size - 1
         m = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range") or "")
@@ -297,7 +334,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.end_headers()
         try:
-            with open(f, "rb") as fh:
+            with fh:
                 fh.seek(start)
                 left = end - start + 1
                 while left > 0:
@@ -335,6 +372,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/state":
             return self.send(200, {"episodes": episodes(), "next_start": next_start(), "auto_pick": bool(can_pick()),
                                   "mode": pick_mode(), "has_claude": bool(claude_cli()),
+                                  "claude_ready": claude_ready() if pick_mode() == "mac" else None,
                                   "has_key": bool(os.environ.get("ANTHROPIC_API_KEY") or api_key())})
         self.send(404, {"error": "not found"})
 
@@ -374,6 +412,11 @@ class Handler(BaseHTTPRequestHandler):
             video = Path(b["video"]).expanduser()
             if not video.exists():
                 raise ValueError("can't find that video")
+            readable(video, "video")
+            if b.get("music"):
+                readable(Path(b["music"]).expanduser(), "music track")
+            if b.get("photo"):
+                readable(Path(b["photo"]).expanduser(), "photo")
             name = re.sub(r"[^\w\- ]", "", b.get("name") or video.stem).strip() or video.stem
             if load_state(name):
                 raise ValueError(f"there's already an episode called {name}")

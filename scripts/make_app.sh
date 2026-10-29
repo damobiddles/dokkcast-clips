@@ -19,24 +19,28 @@ for k in sys.argv[2].split("."):
 print(v or sys.argv[3])
 PY
 }
-NAME="$(studio name 'Dokkcast Studio')"
+NAME="$(studio name 'Offcuts')"
+EXE="$(echo "$NAME" | tr -cd 'A-Za-z0-9')"  # the app's own name in Activity Monitor and macOS privacy settings
 LOGO="$REPO/$(studio logo assets/logo/udokk_logo_gradient.svg)"
 ICON="$(studio icon '')"  # a ready-made square app icon, used as it is
 BG="$(studio colors.bg '#0A0F2C')"
 APP="$HOME/Applications/$NAME.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-cat > "$APP/Contents/MacOS/dokkcast" <<RUN
+rm -f "$APP/Contents/MacOS/dokkcast"  # the old launcher name
+cat > "$APP/Contents/MacOS/$EXE" <<RUN
 #!/bin/bash
 # already running? just show it
 if curl -sf http://127.0.0.1:8765/api/state >/dev/null; then open http://127.0.0.1:8765/; exit 0; fi
 export PATH="\$HOME/.local/bin:/opt/homebrew/opt/ffmpeg-full/bin:/usr/local/opt/ffmpeg-full/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH"
 cd "$REPO"
 mkdir -p output
+# on Apple Silicon, run natively: macOS starts this script under Rosetta, where the Python packages won't load
+ARCH=""; [ "\$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ] && ARCH="arch -arm64"
 # caffeinate keeps the Mac awake while it runs; the server opens the page itself
-nohup caffeinate -i .venv/bin/python dokkapp.py >> output/app-server.log 2>&1 &
+nohup caffeinate -i \$ARCH .venv/bin/python dokkapp.py >> output/app-server.log 2>&1 &
 RUN
-chmod +x "$APP/Contents/MacOS/dokkcast"
+chmod +x "$APP/Contents/MacOS/$EXE"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -44,10 +48,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0"><dict>
   <key>CFBundleName</key><string>$NAME</string>
   <key>CFBundleIdentifier</key><string>studio.$(echo "$NAME" | tr -cs "A-Za-z0-9" "-" | tr A-Z a-z)app</string>
-  <key>CFBundleExecutable</key><string>dokkcast</string>
+  <key>CFBundleExecutable</key><string>$EXE</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSUIElement</key><true/>
+  <key>LSArchitecturePriority</key><array><string>arm64</string><string>x86_64</string></array>
 </dict></plist>
 PLIST
 
@@ -81,5 +86,7 @@ for s in 16 32 128 256 512; do
 done
 iconutil -c icns "$set" -o "$APP/Contents/Resources/icon.icns" || echo "(no icon: iconutil failed)"
 rm -rf "$tmp"
+# signed for this Mac only, so macOS asks about folder access for the app by its name
+codesign --force --deep -s - "$APP" 2>/dev/null || true
 touch "$APP"
 echo "made $APP. Open it from ~/Applications, or drag it to the Dock."

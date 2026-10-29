@@ -34,7 +34,7 @@ Copy lives in output/<name>/copy.json, written alongside the clips:
 Which clip shape each platform gets, the posting time zone and per-platform Postiz settings are in
 brand.json under "social". Needs the Postiz CLI (npm install -g postiz) and `postiz auth:login`.
 """
-import argparse, json, os, re, shutil, subprocess, sys
+import argparse, base64, json, os, re, shutil, subprocess, sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -94,6 +94,19 @@ def plan(name, brand, start=None, at=None, days=None):
 
 
 # ---------------------------------------------------------------------- review
+def studio_page(html, brand):
+    """Give a page the studio's look and name (brand.json "studio"), with its logo inside the page so a
+    zipped kit still shows it. The clips and covers keep the show's own branding."""
+    st = dict(brand.get("studio", {}))
+    logo = ROOT / st.get("logo", "")
+    if st.get("logo") and logo.is_file():
+        kind = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg"}.get(logo.suffix.lower())
+        if kind:
+            st["logo_data"] = f"data:{kind};base64," + base64.b64encode(logo.read_bytes()).decode()
+    theme = (ROOT / "assets" / "studio-theme.html").read_text().replace("/*STUDIO*/null", json.dumps(st) if st else "null")
+    return html.replace("<!--STUDIO-->", theme)
+
+
 def loudness(path):
     """Integrated loudness (LUFS) of a file's audio."""
     r = subprocess.run(["ffmpeg", "-nostats", "-i", str(path), "-vn", "-af", "ebur128", "-f", "null", "-"],
@@ -147,7 +160,7 @@ def review(name, brand, music=None):
         data["music"] = {"src": music_preview(wd, ep), "name": Path(ep["music"]).stem,
                          "db": ep["music_db"] if ep.get("music_db") is not None else mcfg["level_db"]}
     html = (ROOT / "assets" / "posts.html").read_text().replace("/*POSTS*/null", json.dumps(data))
-    (wd / "posts.html").write_text(html)
+    (wd / "posts.html").write_text(studio_page(html, brand))
     print(f"open {wd / 'posts.html'} in a browser")
 
 
@@ -217,7 +230,7 @@ def kit(name, brand):
             if g.exists():
                 shutil.copy2(g, d / f"cover {shape}.png")
     data["posts"], data["upload"], data["shapes"] = posts, UPLOAD, brand["social"]["shapes"]
-    (out / "kit.html").write_text((ROOT / "assets" / "kit.html").read_text().replace("/*POSTS*/null", json.dumps(data)))
+    (out / "kit.html").write_text(studio_page((ROOT / "assets" / "kit.html").read_text().replace("/*POSTS*/null", json.dumps(data)), brand))
     print(f"{len(posts)} posts{'' if any(p['approved'] for p in posts) else ' (none approved yet, so all of them)'}"
           f" -> {out}\nopen {out / 'kit.html'} in a browser")
 

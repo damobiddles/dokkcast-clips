@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dokkcast Studio</title>
+<title>Offcuts</title>
 <style>
   :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --ok: #7be0a6; --warn: #ff8a8a; --wait: #ffd27a; --field: #0d1233; --button: #222a5c; --code: #070b22; --bw: 1px; --shadow: none; --radius: 10px; --scheme: dark; --head: inherit; --track: var(--line); }
   * { box-sizing: border-box; }
@@ -69,7 +69,7 @@
       <label class="opt"><input type="radio" name="mode" value="chat"> Claude in chat: the app pauses after transcribing and you ask Claude to pick the clips</label>
       <label class="opt"><input type="radio" name="mode" value="api"> Automatic: the app asks Claude itself (needs an Anthropic API key, about 30p an episode)</label>
     </div>
-    <div id="macrow" class="dim" style="display:none;margin-top:10px">Claude Code isn't on this Mac yet. Once, in Terminal:
+    <div id="macrow" class="dim" style="display:none;margin-top:10px">Claude Code isn't signed in on this Mac yet. Once, in Terminal:
       <code>curl -fsSL https://claude.ai/install.sh | bash</code>, then type <code>claude</code> and sign in with your Claude account.</div>
     <div id="keyrow" style="display:none">
       <div class="dim" style="margin-top:10px">Paste an Anthropic API key (console.anthropic.com, Settings, API keys). It's kept on this Mac only.</div>
@@ -182,7 +182,7 @@ function actions(ep) {
 function draw() {
   document.querySelectorAll("input[name=mode]").forEach(r => r.checked = r.value === state.mode);
   document.getElementById("keyrow").style.display = state.mode === "api" && !state.has_key ? "block" : "none";
-  document.getElementById("macrow").style.display = state.mode === "mac" && !state.has_claude ? "block" : "none";
+  document.getElementById("macrow").style.display = state.mode === "mac" && state.claude_ready === false ? "block" : "none";
   const s = document.getElementById("start"); if (!s.value) s.value = state.next_start;
   const box = document.getElementById("eps");
   const open = new Set([...box.querySelectorAll("details[open]")].map(d => d.dataset.name));
