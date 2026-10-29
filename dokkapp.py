@@ -200,6 +200,12 @@ def keep_photo(name, path):
         return
     out = OUT / name / "photo.jpg"
     out.parent.mkdir(parents=True, exist_ok=True)
+    try:  # turned the right way up: phone photos are stored sideways with a note saying which way to turn them
+        from PIL import Image, ImageOps
+        ImageOps.exif_transpose(Image.open(path)).convert("RGB").save(out, quality=92)
+        return
+    except Exception:  # e.g. HEIC, which Pillow can't open: let macOS convert it (sips keeps the orientation note)
+        pass
     r = subprocess.run(["sips", "-s", "format", "jpeg", path, "--out", str(out)], capture_output=True, text=True)
     if r.returncode or not out.exists():
         out.unlink(missing_ok=True)

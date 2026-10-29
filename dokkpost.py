@@ -263,7 +263,11 @@ def finish(name, brand, music=None, title=None):
     subprocess.run(cmd + (["--music", music] if music else []), check=True)
     g = ROOT / "dokkgraphics.py"
     if g.exists():
-        if subprocess.run([sys.executable, str(g), name]).returncode:
+        # the covers name the guest: whichever speaker isn't the host (the speaker numbers vary by episode)
+        host = brand.get("pick", {}).get("host", "Dr. Nara Daubeney")
+        speakers = load_plan(wd).get("speakers", {})
+        guest = next((k for k, v in speakers.items() if v.get("name") != host), None)
+        if subprocess.run([sys.executable, str(g), name] + (["--guest", guest] if guest else [])).returncode:
             print("graphics failed; carrying on without covers")
     kit(name, brand)
     make_zip(name, title)
