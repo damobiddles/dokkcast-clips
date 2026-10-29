@@ -193,11 +193,29 @@ def newest_saved(name):
     return None
 
 
+def keep_photo(name, path):
+    """Copy the guest photo into the episode folder straight away: one dragged from Photos is a
+    temporary file that macOS soon deletes."""
+    if not path:
+        return
+    out = OUT / name / "photo.jpg"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    r = subprocess.run(["sips", "-s", "format", "jpeg", path, "--out", str(out)], capture_output=True, text=True)
+    if r.returncode or not out.exists():
+        out.unlink(missing_ok=True)
+        raise ValueError("couldn't read that photo: save it to a folder first (from Photos: File, Export), then choose it")
+
+
 # ------------------------------------------------------------------ the routine
 def advance(name):
     """Run steps until one needs a person (picks, review) or everything is done."""
     st = load_state(name)
     try:
+        if st.get("photo") and not (OUT / name / "photo.jpg").exists():
+            try:
+                keep_photo(name, st["photo"])
+            except ValueError as e:
+                log(name, f"photo: {e}")
         while True:
             step = st["step"]
             st.update(status="running", error=None); save_state(name, st)
@@ -224,9 +242,6 @@ def advance(name):
                 saved = newest_saved(name)
                 if saved:
                     run(name, [PY, "dokkpost.py", "apply", name, saved])
-                if st.get("photo") and not (OUT / name / "photo.jpg").exists():
-                    subprocess.run(["sips", "-s", "format", "jpeg", st["photo"], "--out", str(OUT / name / "photo.jpg")],
-                                   capture_output=True)
                 run(name, [PY, "dokkpost.py", "finish", name] + (["--title", st["guest"]] if st.get("guest") else []))
                 st["step"] = "done"; st["status"] = "done"; st["zip"] = find_zip(name, st.get("guest"))
                 save_state(name, st)
@@ -416,8 +431,6 @@ class Handler(BaseHTTPRequestHandler):
             readable(video, "video")
             if b.get("music"):
                 readable(Path(b["music"]).expanduser(), "music track")
-            if b.get("photo"):
-                readable(Path(b["photo"]).expanduser(), "photo")
             name = re.sub(r"[^\w\- ]", "", b.get("name") or video.stem).strip() or video.stem
             if load_state(name):
                 raise ValueError(f"there's already an episode called {name}")
@@ -432,8 +445,13 @@ class Handler(BaseHTTPRequestHandler):
                     link.symlink_to(video)
                 st["video"] = str(link)
             save_state(name, st)
+            warning = None
+            try:
+                keep_photo(name, st["photo"])
+            except ValueError as e:
+                st["photo"] = None; save_state(name, st); warning = str(e)
             start(name)
-            return {"name": name}
+            return {"name": name, "warning": warning}
         name = b.get("name", "")
         st = load_state(name)
         if not st:
@@ -462,11 +480,11 @@ class Handler(BaseHTTPRequestHandler):
             st.update(step="review", status="queued", waiting=None); save_state(name, st); start(name)
             return {"ok": True}
         if path == "/api/set":  # music, photo, guest, start date
+            if b.get("photo"):
+                keep_photo(name, b["photo"])
             for k in ("music", "photo", "guest", "role", "start"):
                 if k in b:
                     st[k] = b[k]
-            if "photo" in b:
-                (OUT / name / "photo.jpg").unlink(missing_ok=True)
             save_state(name, st)
             return {"ok": True}
         if path == "/api/open":

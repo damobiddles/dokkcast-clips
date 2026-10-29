@@ -136,7 +136,7 @@ document.querySelectorAll("[data-choose]").forEach(b => b.onclick = async () => 
 });
 document.getElementById("go").onclick = async () => {
   if (!pick.video) return toast("Choose the episode video first");
-  const { name } = await post("/api/new", { video: pick.video, music: pick.music, photo: pick.photo,
+  const { name, warning } = await post("/api/new", { video: pick.video, music: pick.music, photo: pick.photo,
     guest: document.getElementById("guest").value, role: document.getElementById("role").value,
     start: document.getElementById("start").value });
   pick.video = pick.music = pick.photo = null;
@@ -146,7 +146,8 @@ document.getElementById("go").onclick = async () => {
   document.getElementById("p-photo").textContent = "Optional, for the covers";
   ["guest", "role"].forEach(id => document.getElementById(id).value = "");
   await refresh();
-  toast(`Started ${name}. Its progress is below; the form is clear for the next episode.`, true);
+  if (warning) toast(`Started ${name}, but the photo didn't come through: ${warning}. Use Add guest photo on its card.`);
+  else toast(`Started ${name}. Its progress is below; the form is clear for the next episode.`, true);
   const card = [...document.querySelectorAll("#eps .card")].find(c => c.dataset.name === name);
   if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
 };
