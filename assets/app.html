@@ -7,7 +7,8 @@
 <style>
   :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --ok: #7be0a6; --warn: #ff8a8a; --wait: #ffd27a; --field: #0d1233; --button: #222a5c; --code: #070b22; --bw: 1px; --shadow: none; --radius: 10px; --scheme: dark; --head: inherit; --track: var(--line); }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color-scheme: var(--scheme); }
+  body.noise { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .38 0 0 0 0 .36 0 0 0 0 .33 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
   header { padding: 18px 16px; border-bottom: 1px solid var(--line); }
   .wrap { max-width: 860px; margin: 0 auto; }
   h1 { font-size: 32px; line-height: 1.1; margin: 0; font-family: var(--head); }
@@ -25,11 +26,14 @@
   .path { color: var(--dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .path.set { color: var(--text); }
   input[type=text], input[type=date], input[type=password] { width: 100%; background: var(--field); color: var(--text); border: var(--bw) solid var(--line);
-    border-radius: 6px; padding: 7px 9px; font: inherit; font-size: 14px; color-scheme: var(--scheme); }
-  button { background: var(--button); color: var(--text); border: var(--bw) solid var(--line); border-radius: 6px; padding: 7px 12px;
+    border-radius: 10px; padding: 7px 9px; font: inherit; font-size: 14px; color-scheme: var(--scheme); }
+  input:focus { outline: 2px solid var(--hi); outline-offset: 1px; }
+  button { background: var(--button); color: var(--text); border: var(--btn-bw, var(--bw)) solid var(--btn-line, var(--line)); border-radius: var(--btn-radius, 6px); padding: 7px 14px;
     font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  button { transition: transform .12s, box-shadow .12s; }
   button:hover { border-color: var(--hi); }
-  button.primary { background: var(--hi); color: var(--on-hi, #0A0F2C); border: 0; font-weight: 600; padding: 9px 16px; }
+  button.primary { background: var(--hi); color: var(--on-hi, #0A0F2C); border: var(--btn-bw, 0) solid var(--btn-line, transparent); font-weight: 700; padding: 9px 18px; font-family: var(--head); }
+  button.primary:hover { border-color: var(--btn-line, transparent); transform: translate(-2px, -2px); box-shadow: var(--btn-shadow, none); }
   button:disabled { opacity: .5; cursor: default; }
   .opt { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; flex-basis: 100%; cursor: pointer; }
   .opt input { margin-top: 3px; accent-color: var(--hi); }
@@ -42,6 +46,7 @@
   .step.err { border-color: var(--warn); color: var(--warn); font-weight: 600; }
   .status { font-size: 14px; margin-top: 8px; }
   .attn { border-color: var(--hi); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .attn[hidden] { display: none; }
   .status.err { color: var(--warn); }
   .ep-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
   .ep-head b { font-size: 16px; }
@@ -103,8 +108,10 @@ if (STUDIO) {
   const look = STUDIO.look || {};
   for (const [k, v] of Object.entries({ bg: c.bg, panel: c.panel, line: c.line, text: c.text, dim: c.dim, hi: c.accent, "on-hi": c.on_accent,
       field: c.field, button: c.button, track: c.track, code: c.code, ok: c.ok, warn: c.warn, wait: c.wait,
-      bw: look.border, shadow: look.shadow, radius: look.radius, scheme: look.scheme, head: STUDIO.headline_font }))
+      bw: look.border, shadow: look.shadow, radius: look.radius, scheme: look.scheme, head: STUDIO.headline_font,
+      "btn-radius": look.button_radius, "btn-bw": look.button_border, "btn-line": c.button_line, "btn-shadow": look.button_shadow }))
     if (v) r.setProperty("--" + k, v);
+  if (look.noise) document.body.classList.add("noise");  // the MBMS paper grain
   if (STUDIO.fonts_css) { const f = document.createElement("link"); f.rel = "stylesheet"; f.href = STUDIO.fonts_css; document.head.appendChild(f); }
   if (STUDIO.font) document.body.style.fontFamily = STUDIO.font;
   document.title = STUDIO.name;

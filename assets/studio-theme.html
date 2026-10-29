@@ -3,12 +3,16 @@
   :root { --field: #0d1233; --button: #222a5c; --on-hi: #0A0F2C; --bw: 1px; --shadow: none; --radius: 10px; --scheme: dark; --head: inherit; }
   .post, .pl.box { border-width: var(--bw); border-radius: var(--radius); box-shadow: var(--shadow); }
   textarea, input[type=text], input[type=datetime-local] { background: var(--field); border-width: var(--bw); color-scheme: var(--scheme); }
-  button, a.btn { background: var(--button); border-width: var(--bw); }
-  button.primary { background: var(--hi); color: var(--on-hi); border: var(--bw) solid var(--line); box-shadow: var(--shadow); }
+  button, a.btn { background: var(--button); border: var(--btn-bw, var(--bw)) solid var(--btn-line, var(--line)); border-radius: var(--btn-radius, 6px); transition: transform .12s, box-shadow .12s; }
+  button.primary { background: var(--hi); color: var(--on-hi); font-family: var(--head); font-weight: 700; }
+  button.primary:hover { transform: translate(-2px, -2px); box-shadow: var(--btn-shadow, none); }
+  body { color-scheme: var(--scheme); }
+  body.noise { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .38 0 0 0 0 .36 0 0 0 0 .33 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  footer { background: var(--bg); }
   header, footer { border-width: var(--bw); }
   h1 { font-family: var(--head); }
   .studio { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; color: var(--dim); font-size: 13px; text-decoration: none; }
-  .studio img { height: 36px; width: auto; }
+  .studio img { height: 44px; width: auto; }
   .studio b { color: var(--text); font-family: var(--head); font-size: 15px; }
 </style>
 <script>
@@ -18,8 +22,10 @@
   const c = S.colors || {}, look = S.look || {}, r = document.documentElement.style;
   for (const [k, v] of Object.entries({ bg: c.bg, panel: c.panel, line: c.line, text: c.text, dim: c.dim, hi: c.accent, "on-hi": c.on_accent,
       field: c.field, button: c.button, ok: c.ok, warn: c.warn, bw: look.border, shadow: look.shadow, radius: look.radius,
-      scheme: look.scheme, head: S.headline_font }))
+      scheme: look.scheme, head: S.headline_font, "btn-radius": look.button_radius, "btn-bw": look.button_border,
+      "btn-line": c.button_line, "btn-shadow": look.button_shadow }))
     if (v) r.setProperty("--" + k, v);
+  if (look.noise) document.body.classList.add("noise");
   if (S.fonts_css) { const f = document.createElement("link"); f.rel = "stylesheet"; f.href = S.fonts_css; document.head.appendChild(f); }
   if (S.font) document.body.style.fontFamily = S.font;
   const page = document.body.dataset.page;

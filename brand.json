@@ -2,15 +2,16 @@
   "studio": {
     "name": "Offcuts",
     "tagline": "by MBMS Podcast Studio · one episode in, a month of marketing out",
-    "logo": "assets/studio/mbms-logo.svg",
+    "logo": "assets/studio/mbms-logo-for-dark-backgrounds.svg",
     "icon": "assets/studio/mbms-icon-1024.png",
-    "fonts_css": "https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Poppins:wght@800&display=swap",
+    "fonts_css": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap",
     "font": "Inter, system-ui, sans-serif",
     "headline_font": "Poppins, Inter, sans-serif",
-    "colors": {"bg": "#F3F0EA", "panel": "#F8F6F1", "line": "#17161C", "text": "#17161C", "dim": "#5f5a53", "track": "#A8A29A",
-               "accent": "#FF5A36", "on_accent": "#17161C", "field": "#FFFFFF", "button": "#F8F6F1", "code": "#E9E4DC",
-               "ok": "#1f8a4c", "warn": "#B5321A", "wait": "#d98b00"},
-    "look": {"border": "2px", "shadow": "4px 4px 0 #17161C", "radius": "6px", "scheme": "light"}
+    "colors": {"bg": "#17161C", "panel": "#24222B", "line": "#3A3842", "text": "#F3F0EA", "dim": "#AAA5B0", "track": "#34323C",
+               "accent": "#FF5A36", "on_accent": "#17161C", "field": "#17161C", "button": "#24222B", "button_line": "#F3F0EA",
+               "code": "#0E0D12", "ok": "#4CC37E", "warn": "#FF7A5C", "wait": "#F2B33D"},
+    "look": {"border": "1px", "shadow": "none", "radius": "12px", "button_radius": "999px", "button_border": "1.5px",
+             "button_shadow": "4px 4px 0 #F3F0EA", "scheme": "dark", "noise": true}
   },
   "canvas": {
     "width": 1080,
