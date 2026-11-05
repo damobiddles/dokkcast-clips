@@ -220,6 +220,9 @@ def advance(name):
     """Run steps until one needs a person (picks, review) or everything is done."""
     st = load_state(name)
     try:
+        if st.get("music") and not Path(st["music"]).exists() and (VIDEOS / Path(st["music"]).name).exists():
+            st["music"] = str(VIDEOS / Path(st["music"]).name)  # moved into Source files since
+            save_state(name, st)
         if st.get("photo") and not (OUT / name / "photo.jpg").exists():
             try:
                 keep_photo(name, st["photo"])
@@ -251,7 +254,8 @@ def advance(name):
                 saved = newest_saved(name)
                 if saved:
                     run(name, [PY, "dokkpost.py", "apply", name, saved])
-                run(name, [PY, "dokkpost.py", "finish", name] + (["--title", st["guest"]] if st.get("guest") else []))
+                run(name, [PY, "dokkpost.py", "finish", name] + (["--title", st["guest"]] if st.get("guest") else [])
+                    + (["--music", st["music"]] if st.get("music") else []))
                 st["step"] = "done"; st["status"] = "done"; st["zip"] = find_zip(name, st.get("guest"))
                 save_state(name, st)
                 notify(f"{st.get('guest') or name}: the posting kit and zip are ready")
