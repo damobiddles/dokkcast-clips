@@ -116,7 +116,7 @@ logo and icon files go in `assets/studio/` (from the MBMS brand kit; not kept in
 
 On the Mac the app lives in one folder, ~/Offcuts:
 
-    Videos/            new episode videos and music go here (Choose… opens here)
+    Source files/      new episode videos and music go here (Choose… opens here)
     Ready to post/     one zip per finished episode: clips, covers and captions
     Working files/     each episode's workings (transcripts, clips, kit); the app looks after it
     App/               this repository, with its .venv and models (output/ links to ../Working files)

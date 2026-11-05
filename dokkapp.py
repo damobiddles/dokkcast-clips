@@ -149,7 +149,7 @@ def readable(path, what):
         with open(path, "rb") as f:
             f.read(1)
     except PermissionError:
-        raise ValueError(f"macOS isn't letting the app read the {what} there. Put it in Offcuts' Videos folder "
+        raise ValueError(f"macOS isn't letting the app read the {what} there. Put it in Offcuts' Source files folder "
                          "(or allow the app in System Settings, Privacy & Security, Files and Folders)")
 
 
@@ -501,7 +501,7 @@ class Handler(BaseHTTPRequestHandler):
                 st["photo"] = None; save_state(name, st); warning = str(e)
             start(name)
             return {"name": name, "warning": warning}
-        if path == "/api/home":  # the Offcuts folder, with Videos and Ready to post
+        if path == "/api/home":  # the Offcuts folder, with Source files and Ready to post
             subprocess.run(["open", str(STUDIO or ROOT)])
             return {"ok": True}
         name = b.get("name", "")
@@ -572,10 +572,12 @@ def main():
         sys.exit("ffmpeg not found: run ./setup.sh first")
     OUT.mkdir(exist_ok=True)
     if STUDIO:  # the folders a person uses, and a note on what each is for
+        if (STUDIO / "Videos").is_dir() and not VIDEOS.exists():  # its first name
+            (STUDIO / "Videos").rename(VIDEOS)
         VIDEOS.mkdir(exist_ok=True); READY.mkdir(exist_ok=True)
         (STUDIO / "Where things are.txt").write_text(
             "Offcuts\n\n"
-            "Videos           Put each new episode video and its music track here, then choose them in Offcuts.\n"
+            "Source files     Put each new episode video and its music track here, then choose them in Offcuts.\n"
             "Ready to post    One zip per finished episode: the clips, covers and captions to share or post from.\n"
             "Working files    Offcuts' own workings (transcripts, clips, covers). No need to open it.\n"
             "App              The program itself. Leave it be.\n\n"
