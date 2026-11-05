@@ -108,8 +108,7 @@
   "clips": {
     "formats": {
       "portrait": "speaker",
-      "square": "square",
-      "landscape": "landscape"
+      "square": "square"
     },
     "music": {
       "on": true,

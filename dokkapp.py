@@ -288,6 +288,7 @@ def calendar():
     """Every post from every finished episode, in date order: the videos, covers and copy from its
     kit, and which platforms have been posted (ticked in the app, kept in output/<name>/posted.json)."""
     out = []
+    shapes = json.loads((ROOT / "brand.json").read_text())["social"]["shapes"]
     for st in episodes(logs=False):
         name, wd = st["name"], OUT / st["name"]
         if not (wd / "posts.json").exists() or not (wd / "kit").is_dir():
@@ -297,14 +298,20 @@ def calendar():
         for p in [p for p in posts if p.get("approved")] or posts:  # as the kit has them
             d = f"{datetime.fromisoformat(p['when']):%Y-%m-%d %a} clip{p['clip']}"
             kit = wd / "kit" / d
-            pls = [pl for pl, on in p.get("platforms", {}).items() if on and (kit / f"{pl}.mp4").exists()]
+            vids = {}  # a video per platform (older kits) or one per shape
+            for pl, on in p.get("platforms", {}).items():
+                f = next((f for f in (kit / f"{pl}.mp4", kit / f"{shapes.get(pl, 'portrait')}.mp4") if f.exists()), None)
+                if on and f:
+                    vids[pl] = f.name
+            pls = list(vids) if not st.get("tidied") else [pl for pl, on in p.get("platforms", {}).items() if on]
             if not pls:
                 continue
             out.append({"episode": name, "guest": st.get("guest") or name, "role": st.get("role", ""),
                         "when": p["when"].replace(" ", "T"), "clip": p["clip"], "title": p.get("title", ""),
                         "copy": dict(p.get("copy", {}), youtube_title=re.sub(r"\s*#\w+", "", p.get("copy", {}).get("youtube_title", "")).strip()),
                         "platforms": pls, "dir": f"kit/{d}",
-                        "files": {pl: page(name, f"kit/{d}/{pl}.mp4") for pl in pls},
+                        "files": {pl: page(name, f"kit/{d}/{v}") for pl, v in vids.items()},
+                        "paths": {pl: f"kit/{d}/{v}" for pl, v in vids.items()}, "tidied": bool(st.get("tidied")),
                         "covers": [page(name, f"kit/{d}/{c.name}") for c in sorted(kit.glob("cover *.png"))],
                         "posted": posted.get(str(p["clip"]), {})})
     return sorted(out, key=lambda p: p["when"])
@@ -382,6 +389,37 @@ def save_kit(b):
     return {"name": name}
 
 
+def all_posted(wd):
+    """Every platform of every post in the kit ticked as posted on the calendar."""
+    if not (wd / "posts.json").exists():
+        return False
+    posts = json.loads((wd / "posts.json").read_text())["posts"]
+    posted = json.loads((wd / "posted.json").read_text()) if (wd / "posted.json").exists() else {}
+    posts = [p for p in posts if p.get("approved")] or posts
+    return bool(posts) and all(posted.get(str(p["clip"]), {}).get(pl) for p in posts
+                                for pl, on in p.get("platforms", {}).items() if on)
+
+
+def tidy(name, st):
+    """Once everything's posted: delete the episode's videos from Working files, keeping the zip (the one copy
+    that's needed), the transcript, picks and captions, so it can still be remade from the source video."""
+    wd = OUT / name
+    z = st.get("zip") if st.get("zip") and Path(st["zip"]).exists() else find_zip(name, st.get("guest"))
+    if not z:
+        raise ValueError("can't find this episode's zip in Ready to post, so its videos are staying put")
+    freed = 0
+    for f in [*wd.glob("clips/*.mp4"), *wd.glob("clips/*.mov"), *wd.glob("kit/*/*.mp4"), wd / "audio16k.wav"]:
+        if f.is_file():
+            freed += f.stat().st_size if f.stat().st_nlink == 1 else 0  # a linked video frees its space with its last link
+            f.unlink()
+    if (wd / ".work").is_dir():
+        freed += sum(f.stat().st_size for f in (wd / ".work").rglob("*") if f.is_file())
+        shutil.rmtree(wd / ".work", ignore_errors=True)
+    st.update(tidied=datetime.now().isoformat(timespec="seconds"), zip=z)
+    save_state(name, st)
+    return freed
+
+
 def find_zip(name, guest):
     """This episode's zip, wherever it was left: Ready to post, Movies/Dokkcast, the Desktop or the episode folder."""
     surname = (guest or name).split()[-1].lower()  # the zip may use a shorter name, e.g. Jess for Jessica
@@ -434,6 +472,7 @@ def episodes(logs=True):
         st["has_kit"] = (p.parent / "kit" / "kit.html").exists()
         st["kit_url"] = page(st["name"], "kit/kit.html")
         st["kit"] = st.get("kit") or DEFAULT_KIT
+        st["all_posted"] = all_posted(p.parent)
         out.append(st)
     return out
 
@@ -636,12 +675,19 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("can't find that file any more")
             subprocess.run(["open", "-R", str(f)])
             return {"ok": True}
+        if path == "/api/tidy":
+            if name in jobs or st.get("status") != "done":
+                raise ValueError("this episode isn't finished yet")
+            if not all_posted(OUT / name):
+                raise ValueError("tick every post as Posted on the calendar first")
+            freed = tidy(name, st)
+            return {"ok": True, "freed_mb": round(freed / 1e6)}
         if path == "/api/keep":  # changed their mind after Change and remake: keep what was made before
             if st.get("waiting") == "review" and (OUT / name / "kit" / "kit.html").exists():
                 st.update(step="done", status="done", waiting=None); save_state(name, st)
             return {"ok": True}
         if path == "/api/reopen":  # back to the review page, e.g. to change captions after rendering
-            st.update(step="review", status="queued", waiting=None); save_state(name, st); start(name)
+            st.update(step="review", status="queued", waiting=None); st.pop("tidied", None); save_state(name, st); start(name)
             return {"ok": True}
         if path == "/api/set":  # music, photo, guest, start date
             if b.get("photo"):

@@ -241,13 +241,15 @@ def kit(name, brand):
         for pl, on in p["platforms"].items():
             if not on:
                 continue
-            src = wd / "clips" / f"{name}_clip{p['clip']}_{brand['social']['shapes'][pl]}.mp4"
-            dst = d / f"{pl}.mp4"
-            try:
-                os.link(src, dst)  # no extra disk space
-            except OSError:
-                shutil.copy2(src, dst)
-            p["files"][pl] = f"{p['dir']}/{pl}.mp4"  # relative, so the kit still works when the folder is moved or synced
+            shape = brand["social"]["shapes"][pl]
+            src = wd / "clips" / f"{name}_clip{p['clip']}_{shape}.mp4"
+            dst = d / f"{shape}.mp4"  # one video per shape: TikTok, Instagram and YouTube share the portrait one
+            if not dst.exists():
+                try:
+                    os.link(src, dst)  # no extra disk space
+                except OSError:
+                    shutil.copy2(src, dst)
+            p["files"][pl] = f"{p['dir']}/{shape}.mp4"  # relative, so the kit still works when the folder is moved or synced
             cap = (f"Title: {p['copy'].get('youtube_title', '')}\n\n" if pl == "youtube" else "") + p["copy"][pl]
             (d / f"{pl}.txt").write_text(cap + "\n")
             text.append(f"== {pl} ==\n{cap}\n")
@@ -299,6 +301,7 @@ def finish(name, brand, music=None, title=None):
             print("graphics failed; carrying on without covers")
     kit(name, brand)
     make_zip(name, title, brand)
+    shutil.rmtree(wd / ".work", ignore_errors=True)  # the renders' in-between files: often a gigabyte or more
 
 
 # -------------------------------------------------------------------- schedule

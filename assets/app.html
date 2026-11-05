@@ -281,6 +281,8 @@ function stepClass(ep, i) {
 }
 function status(ep) {
   if (ep.status === "error") return `<div class="status err">Stopped: ${esc(ep.error)}</div>`;
+  if (ep.status === "done" && ep.tidied) return `<div class="status">All posted and tidied up: the videos are kept in the zip${ep.zip ? `, ${esc(base(ep.zip))}` : ""}.</div>`;
+  if (ep.status === "done" && ep.all_posted) return `<div class="status">All posted. Tidy up to delete its videos from Working files and keep just the zip.</div>`;
   if (ep.status === "done") return `<div class="status">Done. The zip is ready to share${ep.zip ? `: ${esc(base(ep.zip))}` : ""}.</div>`;
   if (ep.waiting === "picks") return `<div class="status">Transcribed. Now tell Claude in chat: <b>pick the clips for ${esc(ep.name)}</b>. When Claude says they're in, press Continue.</div>`;
   if (ep.waiting === "review") return `<div class="status">Your turn: open the review, watch the clips, set the music, edit the captions and tick Approve. Then press <b>Save and make the clips</b>.</div>`;
@@ -296,6 +298,7 @@ function actions(ep) {
   if (ep.waiting === "review" && ep.has_kit) b.push(`<button data-act="keep">Keep the clips already made</button>`);
   if (ep.status === "done") b.push(`<button class="primary" data-cal="${esc(ep.name)}">See its posts in the calendar</button>`,
     `<button data-act="open" data-what="zip">Show zip in Finder</button>`, `<button data-act="reopen">Change and remake</button>`);
+  if (ep.status === "done" && ep.all_posted && !ep.tidied) b.push(`<button data-act="tidy">Tidy up</button>`);
   if (!ep.running && ep.status !== "done") b.push(`<button data-act="photo">${ep.photo || ep.photo_set ? "Change" : "Add"} guest photo</button>`);
   b.push(`<button data-act="open" data-what="folder">Open folder</button>`);
   return b.join("");
@@ -338,8 +341,16 @@ function draw() {
   });
   box.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
     const name = b.closest(".card").dataset.name, act = b.dataset.act;
-    if (act === "reopen" && !confirm("Go back to the review? Making the clips again takes about 20 minutes. " +
-        "You can still keep the ones already made.")) return;
+    const ep = state.episodes.find(e => e.name === name);
+    if (act === "reopen" && !confirm("Go back to the review? Making the clips again takes about 20 minutes" +
+        (ep && ep.tidied ? " and needs the episode video in Source files." : ". You can still keep the ones already made."))) return;
+    if (act === "tidy") {
+      if (!confirm("Delete this episode's videos from Working files? The zip in Ready to post keeps them all, and the " +
+          "captions and picks stay, so it can be remade from the episode video if ever needed.")) return;
+      const { freed_mb } = await post("/api/tidy", { name });
+      toast(`Tidied up: ${freed_mb >= 1000 ? (freed_mb / 1000).toFixed(1) + " GB" : freed_mb + " MB"} freed`, true);
+      return refresh();
+    }
     if (act === "photo") {
       const { path } = await post("/api/choose", { kind: "photo" });
       if (path) await post("/api/set", { name, photo: path });
@@ -405,7 +416,7 @@ document.querySelectorAll("#when button").forEach(b => b.classList.toggle("on", 
     const due = k <= today && !isPosted(p), done = isPosted(p);
     const vid = p.files.tiktok || p.files.instagram || p.files.youtube || Object.values(p.files)[0];
     html += `<div class="post ${due ? "due" : ""} ${done ? "posted" : ""}" data-ep="${esc(p.episode)}" data-clip="${p.clip}">
-      <div><video controls preload="metadata" src="${esc(vid)}"></video>
+      <div>${vid ? `<video controls preload="metadata" src="${esc(vid)}"></video>` : `<div class="empty" style="padding:20px 8px;font-size:13px">Tidied up: the video is in the zip</div>`}
         <div class="covers">${p.covers.map(c => `<img src="${esc(c)}" title="Cover: click to show it in Finder" data-file="${esc(decodeURIComponent(c.split("/").slice(5).join("/")))}">`).join("")}</div></div>
       <div>
         <div class="post-head"><b>${esc(p.title)}</b><span class="dim">${esc(p.guest)} · clip ${p.clip} · ${esc(p.when.slice(11, 16))}</span>
@@ -415,7 +426,7 @@ document.querySelectorAll("#when button").forEach(b => b.classList.toggle("on", 
           <div class="row"><span class="name">${NAMES[pl] || pl}</span>
             ${pl === "youtube" ? `<button data-copy="youtube_title">Copy title</button>` : ""}
             <button data-copy="${pl}">Copy caption</button>
-            <button data-file="${esc(p.dir)}/${pl}.mp4">Show video</button>
+            ${p.paths[pl] ? `<button data-file="${esc(p.paths[pl])}">Show video</button>` : ""}
             <a href="${esc(cal.upload[pl])}" target="_blank" rel="noopener"><button>Open ${NAMES[pl] || pl}</button></a>
             <label><input type="checkbox" ${p.posted[pl] ? "checked" : ""}> Posted</label></div>
           ${pl === "youtube" ? `<div class="cap ytt">${esc(p.copy.youtube_title)}</div>` : ""}
