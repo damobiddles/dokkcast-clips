@@ -58,17 +58,81 @@
   .spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--hi); border-right-color: transparent; border-radius: 50%;
     animation: r 1s linear infinite; margin-right: 6px; }
   @keyframes r { to { transform: rotate(360deg); } }
+  nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+  nav a { color: var(--dim); text-decoration: none; padding: 8px 14px; border-radius: var(--btn-radius, 8px); font-weight: 600; font-size: 14px; }
+  nav a:hover { color: var(--text); }
+  nav a.on { color: var(--on-hi); background: var(--hi); }
+  nav .n { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 99px; background: var(--wait); color: #111; font-size: 11px; text-align: center; }
+  .view[hidden], nav .n[hidden] { display: none; }
+  .how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0 0; }
+  @media (max-width: 680px) { .how { grid-template-columns: 1fr; } }
+  .how div { background: var(--panel); border: var(--bw) solid var(--line); border-radius: var(--radius); padding: 12px 14px; font-size: 13px; color: var(--dim); }
+  .how b { display: block; color: var(--text); font-family: var(--head); font-size: 14px; margin-bottom: 2px; }
+  .wrap.wide { max-width: 1080px; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 16px 0 4px; }
+  .seg { display: inline-flex; border: var(--btn-bw, 1px) solid var(--btn-line, var(--line)); border-radius: var(--btn-radius, 8px); overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; }
+  .seg button.on { background: var(--hi); color: var(--on-hi); }
+  select { background: var(--field); color: var(--text); border: var(--bw) solid var(--line); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 13px; }
+  .day { margin: 22px 0 8px; font-family: var(--head); font-size: 15px; display: flex; gap: 10px; align-items: baseline; }
+  .day .dim { font-family: inherit; }
+  .day.today { color: var(--hi); }
+  .post { background: var(--panel); border: var(--bw) solid var(--line); border-radius: var(--radius); padding: 14px; margin: 10px 0;
+    display: grid; grid-template-columns: 170px 1fr; gap: 16px; }
+  .post.due { border-color: var(--wait); }
+  .post.posted { opacity: .55; }
+  @media (max-width: 680px) { .post { grid-template-columns: 1fr; } }
+  .post video { width: 100%; aspect-ratio: 9 / 16; background: #000; border-radius: 8px; object-fit: contain; }
+  .covers { display: flex; gap: 6px; margin-top: 6px; }
+  .covers img { width: 52px; height: 52px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; }
+  .post-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .post-head b { font-size: 16px; font-family: var(--head); }
+  .tag { font-size: 12px; padding: 1px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--dim); }
+  .tag.due { border-color: var(--wait); color: var(--wait); }
+  .tag.ok { border-color: var(--ok); color: var(--ok); }
+  .pl { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; }
+  .pl.done .cap { opacity: .5; }
+  .pl .row { margin-top: 0; }
+  .pl .name { font-weight: 700; min-width: 112px; }
+  .pl label { display: flex; gap: 6px; align-items: center; margin-left: auto; font-size: 13px; cursor: pointer; }
+  .pl label input { accent-color: var(--ok); width: 16px; height: 16px; }
+  .cap { font-size: 13px; color: var(--dim); white-space: pre-wrap; margin-top: 6px; max-height: 3.9em; overflow: hidden; cursor: pointer; }
+  .cap.open { max-height: none; color: var(--text); }
+  .cap.ytt { color: var(--text); font-weight: 600; max-height: none; }
+  button.copied { border-color: var(--ok); color: var(--ok); }
+  .empty { text-align: center; padding: 40px 16px; color: var(--dim); }
   #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--warn); color: #fff; padding: 8px 14px;
     border-radius: 8px; font-weight: 600; display: none; max-width: 90vw; }
 </style>
 </head>
 <body>
-<header><div class="wrap brand">
+<header><div class="wrap wide brand">
   <img id="logo" alt="" hidden>
   <div><h1 id="name">Studio</h1><div class="sub" id="tagline"></div></div>
+  <nav><a href="#calendar" data-view="calendar">Calendar</a><a href="#episodes" data-view="episodes">Episodes<span class="n" id="n-eps" hidden></span></a><a href="#new" data-view="new">New episode</a></nav>
 </div></header>
-<main><div class="wrap">
+<main><div class="wrap wide">
   <div class="card attn" id="attn" hidden></div>
+
+  <section class="view" id="v-calendar">
+    <div class="bar">
+      <div class="seg" id="when"><button data-when="todo" class="on">To post</button><button data-when="upcoming">Upcoming</button><button data-when="all">All</button></div>
+      <select id="ep-filter"><option value="">All episodes</option></select>
+      <span class="dim" id="cal-sum" style="margin-left:auto"></span>
+    </div>
+    <div id="cal"></div>
+  </section>
+
+  <section class="view" id="v-episodes" hidden>
+    <div id="eps"></div>
+  </section>
+
+  <section class="view" id="v-new" hidden>
+  <div class="how">
+    <div><b>1 · New episode</b>Choose the video and music and press Start. Offcuts transcribes it and picks the clips.</div>
+    <div><b>2 · Review</b>When it's ready, it opens the review: watch, set the music, edit the captions, approve, then make the clips.</div>
+    <div><b>3 · Calendar</b>The posts land in the calendar, day by day: copy each caption, drag in the video, tick Posted.</div>
+  </div>
   <div class="card" id="keycard">
     <h2>Clip picking</h2>
     <div class="row" style="margin-top:0">
@@ -96,8 +160,7 @@
     </div>
     <div class="row"><button class="primary" id="go">Start</button><span class="dim">Takes about 15 minutes, then the review opens here.</span></div>
   </div>
-
-  <div id="eps"></div>
+  </section>
 </div></main>
 <div id="toast"></div>
 <script>
@@ -154,11 +217,10 @@ document.getElementById("go").onclick = async () => {
   document.getElementById("p-music").textContent = "None (no music)";
   document.getElementById("p-photo").textContent = "Optional, for the covers";
   ["guest", "role"].forEach(id => document.getElementById(id).value = "");
+  location.hash = "episodes";
   await refresh();
   if (warning) toast(`Started ${name}, but the photo didn't come through: ${warning}. Use Add guest photo on its card.`);
-  else toast(`Started ${name}. Its progress is below; the form is clear for the next episode.`, true);
-  const card = [...document.querySelectorAll("#eps .card")].find(c => c.dataset.name === name);
-  if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+  else toast(`Started ${name}. You'll see each step here; the review opens when it's ready.`, true);
 };
 document.querySelectorAll("input[name=mode]").forEach(r => r.onchange = async () => { await post("/api/mode", { pick: r.value }); refresh(); });
 document.getElementById("savekey").onclick = async () => {
@@ -188,8 +250,8 @@ function actions(ep) {
   if (ep.waiting === "picks") b.push(`<button class="primary" data-act="continue">Continue</button>`);
   if (ep.waiting === "review") b.push(`<button class="primary" data-go="${esc(ep.review_url)}">Open the review</button>`);
   if (ep.waiting === "review" && ep.has_kit) b.push(`<button data-act="keep">Keep the clips already made</button>`);
-  if (ep.status === "done") b.push(`<button class="primary" data-act="open" data-what="zip">Show zip in Finder</button>`,
-    `<button data-go="${esc(ep.kit_url)}">Open posting kit</button>`, `<button data-act="reopen">Change and remake</button>`);
+  if (ep.status === "done") b.push(`<button class="primary" data-cal="${esc(ep.name)}">See its posts in the calendar</button>`,
+    `<button data-act="open" data-what="zip">Show zip in Finder</button>`, `<button data-act="reopen">Change and remake</button>`);
   if (!ep.running && ep.status !== "done") b.push(`<button data-act="photo">${ep.photo || ep.photo_set ? "Change" : "Add"} guest photo</button>`);
   b.push(`<button data-act="open" data-what="folder">Open folder</button>`);
   return b.join("");
@@ -207,9 +269,14 @@ function draw() {
     ep.waiting === "picks" ? "is ready for you to press Continue" : "is ready to review"}</span>
     <button class="primary" data-show="${esc(ep.name)}">Show me</button>`).join("<br>");
   attn.querySelectorAll("[data-show]").forEach(b => b.onclick = () => {
-    const card = [...document.querySelectorAll("#eps .card")].find(c => c.dataset.name === b.dataset.show);
-    if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    location.hash = "episodes";
+    setTimeout(() => {
+      const card = [...document.querySelectorAll("#eps .card")].find(c => c.dataset.name === b.dataset.show);
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
   });
+  const n = document.getElementById("n-eps"); n.hidden = !need.length; n.textContent = need.length;
+  if (!state.episodes.length) document.getElementById("eps").innerHTML = "";
   const box = document.getElementById("eps");
   const open = new Set([...box.querySelectorAll("details[open]")].map(d => d.dataset.name));
   box.innerHTML = state.episodes.map(ep => `<div class="card" data-name="${esc(ep.name)}">
@@ -220,7 +287,11 @@ function draw() {
       <div class="row">${actions(ep)}</div>
       <details data-name="${esc(ep.name)}" ${open.has(ep.name) ? "open" : ""}><summary>Details</summary><pre>${esc(ep.log || "Nothing yet")}</pre></details>
     </div>`).join("");
+  if (!state.episodes.length) box.innerHTML = `<div class="empty">No episodes yet. <a href="#new">Start one</a>.</div>`;
   box.querySelectorAll("[data-go]").forEach(b => b.onclick = () => location.href = b.dataset.go);
+  box.querySelectorAll("[data-cal]").forEach(b => b.onclick = () => {
+    document.getElementById("ep-filter").value = b.dataset.cal; filt.when = "all"; location.hash = "calendar"; drawCal();
+  });
   box.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
     const name = b.closest(".card").dataset.name, act = b.dataset.act;
     if (act === "photo") {
@@ -243,8 +314,104 @@ async function refresh() {
   }
   catch (e) { document.getElementById("eps").innerHTML = `<div class="card status err">The app has stopped. Open ${esc(STUDIO ? STUDIO.name : 'the app')} again.</div>`; }
 }
+// ---------------------------------------------------------------- the calendar
+const NAMES = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube Shorts", linkedin: "LinkedIn" };
+let cal = null, calKey = "";
+const filt = { when: "todo" };
+const isPosted = p => p.platforms.every(pl => p.posted[pl]);
+const dayKey = w => w.slice(0, 10);
+function dayLabel(k) {
+  const d = new Date(k + "T12:00"), t = new Date(); t.setHours(12, 0, 0, 0);
+  const diff = Math.round((d - t) / 864e5);
+  const long = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+  return diff === 0 ? ["Today", long] : diff === 1 ? ["Tomorrow", long] : diff === -1 ? ["Yesterday", long] : [long, ""];
+}
+async function copy(btn, text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); }
+  const was = btn.textContent; btn.textContent = "Copied"; btn.classList.add("copied");
+  setTimeout(() => { btn.textContent = was; btn.classList.remove("copied"); }, 1200);
+}
+function drawCal() {
+  if (!cal) return;
+  const sel = document.getElementById("ep-filter"), chosen = sel.value;
+  const eps = [...new Map(cal.posts.map(p => [p.episode, p.guest])).entries()];
+  sel.innerHTML = `<option value="">All episodes</option>` + eps.map(([e, g]) => `<option value="${esc(e)}">${esc(g)}</option>`).join("");
+  sel.value = eps.some(([e]) => e === chosen) ? chosen : "";
+  document.querySelectorAll("#when button").forEach(b => b.classList.toggle("on", b.dataset.when === filt.when));
+  const today = new Date().toISOString().slice(0, 10);
+  let posts = cal.posts.filter(p => !sel.value || p.episode === sel.value);
+  const todo = posts.filter(p => !isPosted(p));
+  if (filt.when === "todo") posts = todo;
+  if (filt.when === "upcoming") posts = posts.filter(p => dayKey(p.when) >= today);
+  const next = todo.find(p => dayKey(p.when) >= today);
+  document.getElementById("cal-sum").textContent = cal.posts.length ?
+    `${todo.length} of ${cal.posts.filter(p => !sel.value || p.episode === sel.value).length} posts still to go` +
+    (next ? ` · next: ${dayLabel(dayKey(next.when))[0]} ${next.when.slice(11, 16)}` : "") : "";
+  const box = document.getElementById("cal");
+  if (!cal.posts.length) { box.innerHTML = `<div class="empty">No posts yet. When an episode is finished, its posts appear here, day by day.<br><br><a href="#new">Start an episode</a></div>`; return; }
+  if (!posts.length) { box.innerHTML = `<div class="empty">Nothing to post here. Everything's done.</div>`; return; }
+  let html = "", last = "";
+  for (const p of posts) {
+    const k = dayKey(p.when);
+    if (k !== last) { const [a, b2] = dayLabel(k); html += `<div class="day ${k === today ? "today" : ""}">${esc(a)} <span class="dim">${esc(b2)}</span></div>`; last = k; }
+    const due = k <= today && !isPosted(p), done = isPosted(p);
+    const vid = p.files.tiktok || p.files.instagram || p.files.youtube || Object.values(p.files)[0];
+    html += `<div class="post ${due ? "due" : ""} ${done ? "posted" : ""}" data-ep="${esc(p.episode)}" data-clip="${p.clip}">
+      <div><video controls preload="metadata" src="${esc(vid)}"></video>
+        <div class="covers">${p.covers.map(c => `<img src="${esc(c)}" title="Cover: click to show it in Finder" data-file="${esc(decodeURIComponent(c.split("/").slice(5).join("/")))}">`).join("")}</div></div>
+      <div>
+        <div class="post-head"><b>${esc(p.title)}</b><span class="dim">${esc(p.guest)} · clip ${p.clip} · ${esc(p.when.slice(11, 16))}</span>
+          ${done ? `<span class="tag ok">Posted</span>` : due ? `<span class="tag due">${k < today ? "Overdue" : "Due today"}</span>` : ""}
+          <button style="margin-left:auto" data-file="${esc(p.dir)}">Show files in Finder</button></div>
+        ${p.platforms.map(pl => `<div class="pl ${p.posted[pl] ? "done" : ""}" data-pl="${pl}">
+          <div class="row"><span class="name">${NAMES[pl] || pl}</span>
+            ${pl === "youtube" ? `<button data-copy="youtube_title">Copy title</button>` : ""}
+            <button data-copy="${pl}">Copy caption</button>
+            <button data-file="${esc(p.dir)}/${pl}.mp4">Show video</button>
+            <a href="${esc(cal.upload[pl])}" target="_blank" rel="noopener"><button>Open ${NAMES[pl] || pl}</button></a>
+            <label><input type="checkbox" ${p.posted[pl] ? "checked" : ""}> Posted</label></div>
+          ${pl === "youtube" ? `<div class="cap ytt">${esc(p.copy.youtube_title)}</div>` : ""}
+          <div class="cap" title="Click to see it all">${esc(p.copy[pl])}</div></div>`).join("")}
+      </div></div>`;
+  }
+  box.innerHTML = html;
+  box.querySelectorAll(".post").forEach(el => {
+    const p = cal.posts.find(x => x.episode === el.dataset.ep && String(x.clip) === el.dataset.clip);
+    el.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copy(b, p.copy[b.dataset.copy] || ""));
+    el.querySelectorAll("[data-file]").forEach(b => b.onclick = () => post("/api/reveal", { name: p.episode, path: b.dataset.file }));
+    el.querySelectorAll(".cap:not(.ytt)").forEach(c => c.onclick = () => c.classList.toggle("open"));
+    el.querySelectorAll(".pl input").forEach(i => i.onchange = async () => {
+      const pl = i.closest(".pl").dataset.pl;
+      await post("/api/posted", { name: p.episode, clip: p.clip, platform: pl, done: i.checked });
+      p.posted[pl] = i.checked; calKey = ""; loadCal();
+    });
+  });
+}
+async function loadCal() {
+  try {
+    const r = await (await fetch("/api/calendar")).json(), key = JSON.stringify(r);
+    if (key === calKey) return;  // unchanged: leave the page (and any playing video) alone
+    calKey = key; cal = r; drawCal();
+  } catch (e) {}
+}
+document.querySelectorAll("#when button").forEach(b => b.onclick = () => { filt.when = b.dataset.when; drawCal(); });
+document.getElementById("ep-filter").onchange = drawCal;
+
+// ------------------------------------------------------------------ the views
+function show() {
+  const v = (location.hash || "#calendar").slice(1);
+  const view = ["calendar", "episodes", "new"].includes(v) ? v : "calendar";
+  document.querySelectorAll(".view").forEach(s => s.hidden = s.id !== "v-" + view);
+  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.view === view));
+  window.scrollTo(0, 0);
+}
+window.onhashchange = show;
+show();
 refresh();
+loadCal();
 setInterval(refresh, 3000);
+setInterval(loadCal, 10000);
 </script>
 </body>
 </html>

@@ -60,7 +60,7 @@
   <button class="primary" id="make" hidden>Save and make the clips</button>
   <button class="primary" id="save">Save my choices</button>
   <button id="all">Approve all</button>
-  <a id="back" href="/" hidden>Back to the app</a>
+  <a id="back" href="/#episodes" hidden>Back to the app</a>
   <span id="msg">Saves posts.json to Downloads. Nothing is posted until you've approved it here.</span>
 </div></footer>
 <script>
@@ -182,7 +182,7 @@ async function toApp(go) {
   const r = await fetch("/api/save", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: D.episode, posts: choices(), go }) });
   if (!r.ok) { msg.textContent = "Couldn't save: " + ((await r.json()).error || "is the app still open?"); return; }
-  if (go) { music && music.pause(); location.href = "/"; }
+  if (go) { music && music.pause(); location.href = "/#episodes"; }
   else msg.textContent = "Saved. Make the clips when you're ready.";
 }
 document.getElementById("make").onclick = () => {

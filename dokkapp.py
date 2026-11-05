@@ -264,15 +264,46 @@ def advance(name):
 
 def page(name, path):
     """A page of an episode's folder, as the app serves it."""
-    return f"http://127.0.0.1:{PORT}/ep/{quote(name)}/{path}"
+    return f"http://127.0.0.1:{PORT}/ep/{quote(name)}/{quote(path)}"
+
+
+UPLOAD = {"tiktok": "https://www.tiktok.com/tiktokstudio/upload",
+          "instagram": "https://business.facebook.com/latest/composer",
+          "youtube": "https://studio.youtube.com",
+          "linkedin": "https://www.linkedin.com/feed/?shareActive=true"}
+
+
+def calendar():
+    """Every post from every finished episode, in date order: the videos, covers and copy from its
+    kit, and which platforms have been posted (ticked in the app, kept in output/<name>/posted.json)."""
+    out = []
+    for st in episodes(logs=False):
+        name, wd = st["name"], OUT / st["name"]
+        if not (wd / "posts.json").exists() or not (wd / "kit").is_dir():
+            continue
+        posts = json.loads((wd / "posts.json").read_text())["posts"]
+        posted = json.loads((wd / "posted.json").read_text()) if (wd / "posted.json").exists() else {}
+        for p in [p for p in posts if p.get("approved")] or posts:  # as the kit has them
+            d = f"{datetime.fromisoformat(p['when']):%Y-%m-%d %a} clip{p['clip']}"
+            kit = wd / "kit" / d
+            pls = [pl for pl, on in p.get("platforms", {}).items() if on and (kit / f"{pl}.mp4").exists()]
+            if not pls:
+                continue
+            out.append({"episode": name, "guest": st.get("guest") or name, "role": st.get("role", ""),
+                        "when": p["when"].replace(" ", "T"), "clip": p["clip"], "title": p.get("title", ""),
+                        "copy": p.get("copy", {}), "platforms": pls, "dir": f"kit/{d}",
+                        "files": {pl: page(name, f"kit/{d}/{pl}.mp4") for pl in pls},
+                        "covers": [page(name, f"kit/{d}/{c.name}") for c in sorted(kit.glob("cover *.png"))],
+                        "posted": posted.get(str(p["clip"]), {})})
+    return sorted(out, key=lambda p: p["when"])
 
 
 def find_zip(name, guest):
-    for d in (Path.home() / "Movies" / "Dokkcast", OUT / name):
-        zs = sorted(d.glob("Dokkcast posts - *.zip"), key=lambda p: p.stat().st_mtime, reverse=True) if d.exists() else []
-        if zs:
-            return str(zs[0])
-    return None
+    """This episode's zip, wherever it was left: Movies/Dokkcast, the Desktop or the episode folder."""
+    surname = (guest or name).split()[-1].lower()  # the zip may use a shorter name, e.g. Jess for Jessica
+    found = [f for d in (Path.home() / "Movies" / "Dokkcast", Path.home() / "Desktop", OUT / name) if d.is_dir()
+             for f in d.glob("Dokkcast posts - *.zip") if surname in f.stem.lower() and "before" not in f.stem.lower()]
+    return str(max(found, key=lambda f: f.stat().st_mtime)) if found else None
 
 
 def alive(pid):
@@ -300,14 +331,14 @@ def start(name):
     jobs[name].start()
 
 
-def episodes():
+def episodes(logs=True):
     out = []
     for p in sorted(OUT.glob("*/app.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         st = json.loads(p.read_text())
         st["name"] = p.parent.name
         st["running"] = st["name"] in jobs
         lg = p.parent / "app.log"
-        st["log"] = lg.read_text()[-3000:] if lg.exists() else ""
+        st["log"] = lg.read_text()[-3000:] if logs and lg.exists() else ""
         st["photo_set"] = (p.parent / "photo.jpg").exists()
         st["review_url"] = page(st["name"], "posts.html")
         st["has_kit"] = (p.parent / "kit" / "kit.html").exists()
@@ -391,6 +422,8 @@ class Handler(BaseHTTPRequestHandler):
             kind = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(f.suffix.lower())
             if f.exists() and kind:
                 return self.send(200, f.read_bytes(), kind)
+        if u.path == "/api/calendar":
+            return self.send(200, {"posts": calendar(), "upload": UPLOAD})
         if u.path == "/api/state":
             return self.send(200, {"episodes": episodes(), "next_start": next_start(), "auto_pick": bool(can_pick()),
                                   "mode": pick_mode(), "has_claude": bool(claude_cli()),
@@ -478,6 +511,18 @@ class Handler(BaseHTTPRequestHandler):
             if b.get("go") and st.get("waiting") == "review" and name not in jobs:
                 st.update(step="finish", waiting=None); save_state(name, st); start(name)
             return {"ok": True}
+        if path == "/api/posted":  # a platform ticked as posted (or scheduled) on the calendar
+            f = OUT / name / "posted.json"
+            posted = json.loads(f.read_text()) if f.exists() else {}
+            posted.setdefault(str(b["clip"]), {})[b["platform"]] = bool(b.get("done"))
+            f.write_text(json.dumps(posted, indent=1))
+            return {"ok": True}
+        if path == "/api/reveal":  # show one of the episode's files in Finder, ready to drag into a website
+            f = Path(os.path.normpath(OUT / name / b.get("path", "")))
+            if not f.is_relative_to(OUT / name) or not f.exists():
+                raise ValueError("can't find that file any more")
+            subprocess.run(["open", "-R", str(f)])
+            return {"ok": True}
         if path == "/api/keep":  # changed their mind after Change and remake: keep what was made before
             if st.get("waiting") == "review" and (OUT / name / "kit" / "kit.html").exists():
                 st.update(step="done", status="done", waiting=None); save_state(name, st)
@@ -496,8 +541,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/open":
             what = {"review": OUT / name / "posts.html", "kit": OUT / name / "kit" / "kit.html",
                     "folder": OUT / name}.get(b.get("what"))
-            if b.get("what") == "zip" and st.get("zip"):
-                subprocess.run(["open", "-R", st["zip"]])
+            if b.get("what") == "zip":
+                z = st.get("zip") if st.get("zip") and Path(st["zip"]).exists() else find_zip(name, st.get("guest"))
+                if not z:
+                    raise ValueError("can't find the zip: it may have been moved or deleted")
+                subprocess.run(["open", "-R", z])
             elif what and what.exists():
                 subprocess.run(["open", str(what)])
             return {"ok": True}
