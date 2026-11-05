@@ -78,7 +78,9 @@ def apply_kit(brand, d):
             pick[f] = k[f]
     if "host" in k:  # a kit's host comes with their own job title, never another show's
         pick["host_role"] = k.get("host_role", "")
-    b["episode"]["spellings"].update(k.get("spellings", {}))
+    # brand.json's spellings are The Dokkcast's own names (Marsden, udokk...): another show gets only its kit's
+    own = b["episode"]["spellings"] if k["name"] == DEFAULT_KIT else {}
+    b["episode"]["spellings"] = dict(own, **k.get("spellings", {}))
     show = k.get("show") or k["name"]
     b["show"] = {"name": show, "kicker": k.get("kicker") or show, "zip": k.get("zip") or f"{show} posts"}
     b["kit"] = k["name"]
@@ -364,11 +366,6 @@ def layout_brand(brand, L):
     return b
 
 
-def fill_window(bw, W, H):
-    """The width of the picture kept when it fills the whole canvas: the canvas shape at the picture's height."""
-    return lambda bh: min(bw, round(bh * W / H / 2) * 2)
-
-
 def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=None, frame=None):
     """frame {"x": 0..1}: fill the whole canvas with the picture, its centre at x across it (set by dragging
     the preview on the review page), instead of the layout's own framing."""
@@ -379,10 +376,18 @@ def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=No
     c = brand["canvas"]
     W, H = c["width"], c["height"]
     dur = float(sh(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video)]).stdout)
+    fps = sh(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+              "-of", "csv=p=0", str(video)]).stdout.strip()  # keep the source's frame rate
+    try:
+        n, _, d = fps.partition("/")
+        ok = 10 < float(n) / float(d or 1) <= 61
+    except ValueError:
+        ok = False
+    fps = fps if ok else "24000/1001"  # odd ones (variable-rate phone video) get the old film rate
     band = L["crop"] if L["crop"] != "auto" else detect_crop(video)
     bw, bh, bx, by = map(int, band.split(":"))
     if frame is not None:
-        ww = fill_window(bw, W, H)(bh)
+        ww = min(bw, round(bh * W / H / 2) * 2)  # the canvas shape at the picture's full height
         x0 = bx + max(0, min(bw - ww, round(float(frame.get("x", 0.5)) * bw - ww / 2)))
         vid_h = round(bh * W / ww / 2) * 2
         vid_y = (H - vid_h) // 2
@@ -424,7 +429,7 @@ def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=No
     fc += f"[a2]subtitles={ass.as_posix()}:fontsdir={fonts}[out]"
     sh(["ffmpeg", "-y", "-v", "error"] + inputs + [
         "-filter_complex", fc, "-map", "[out]", "-map", "0:a?", "-t", f"{dur}", "-c:v", "libx264", "-crf", "18",
-        "-preset", "medium", "-pix_fmt", "yuv420p", "-r", "24000/1001", "-c:a", "aac", "-b:a", "192k",
+        "-preset", "medium", "-pix_fmt", "yuv420p", "-r", fps, "-c:a", "aac", "-b:a", "192k",
         "-movflags", "+faststart", str(out_mp4)])
     print(f"rendered -> {out_mp4}")
 

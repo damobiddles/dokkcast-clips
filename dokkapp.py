@@ -17,13 +17,15 @@ Pick the episode video and a music track, and it runs each step in order:
 Each episode's progress is kept in output/<name>/app.json, so the app can be closed and opened
 again at any point. Nothing leaves the Mac except the transcript, which goes to Claude to pick the clips.
 """
-import json, os, re, shutil, signal, subprocess, sys, threading, webbrowser
+import json, os, re, shutil, signal, subprocess, sys, threading, time, webbrowser
 from datetime import date, datetime, timedelta
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
 from dokkclip import DEFAULT_KIT, KITS, READY, ROOT, STUDIO, VIDEOS, day_off, read_kit
+from dokkpick import api_key
+from dokkpost import DAYS, UPLOAD
 
 OUT = ROOT / "output"  # in the app, a link to <Offcuts>/Working files
 PY = sys.executable
@@ -63,7 +65,8 @@ def run(name, cmd):
     log(name, f"\n$ {' '.join(map(str, cmd[1:]))}")
     with open(OUT / name / "app.log", "a") as f:
         env = dict(os.environ, OFFCUTS_KIT=(load_state(name) or {}).get("kit") or DEFAULT_KIT)  # the client's branding
-        r = subprocess.Popen(list(map(str, cmd)), cwd=ROOT, stdout=f, stderr=subprocess.STDOUT, env=env)
+        r = subprocess.Popen(list(map(str, cmd)), cwd=ROOT, stdout=f, stderr=subprocess.STDOUT, env=env,
+                             start_new_session=True)  # its own group, so Cancel stops the renders it starts too
         st = load_state(name); st["pid"] = r.pid; save_state(name, st)  # so a restarted app waits for it
         r.wait()
     st = load_state(name); st.pop("pid", None); save_state(name, st)
@@ -93,17 +96,20 @@ def choose(kind):
 
 
 def next_start():
-    """The first weekday after the last post already planned for any episode."""
+    """The first posting day (brand.json social "days") after the last post planned for any episode.
+    Once an episode's posts are approved, only those count: the ones left out won't go out."""
     last = date.today()
     for pj in OUT.glob("*/posts.json"):
-        for p in json.loads(pj.read_text()).get("posts", []):
+        posts = json.loads(pj.read_text()).get("posts", [])
+        for p in [p for p in posts if p.get("approved")] or posts:
             try:
                 last = max(last, datetime.strptime(p["when"][:10], "%Y-%m-%d").date())
             except (KeyError, ValueError):
                 pass
     d = last + timedelta(days=1)
     social = json.loads((ROOT / "brand.json").read_text())["social"]
-    while d.weekday() > 4 or day_off(d, social):
+    days = [DAYS.index(x.strip()[:3].lower()) for x in social["days"].split(",")]
+    while d.weekday() not in days or day_off(d, social):
         d += timedelta(days=1)
     return d.isoformat()
 
@@ -174,12 +180,7 @@ def can_pick():
         import anthropic  # noqa: F401
     except ImportError:
         return None
-    return "api" if os.environ.get("ANTHROPIC_API_KEY") or api_key() else None
-
-
-def api_key():
-    p = Path.home() / ".dokkcast" / "anthropic_key"
-    return p.read_text().strip() if p.exists() else ""
+    return "api" if api_key() else None
 
 
 def newest_saved(name):
@@ -209,9 +210,18 @@ def refind_video(name, st):
     want = [Path(p).name for p in (plan.get("video"), str(v)) if p]
     if v.exists() and (not plan.get("video") or Path(plan["video"]).exists()):
         return
-    found = next((f for n in want for f in VIDEOS.rglob(n) if f.is_file() and not f.is_symlink()), None) \
-        if VIDEOS.is_dir() else None
-    if not found:
+    for n in dict.fromkeys(want):  # the plan's name first: that's the real file, not the episode's link
+        found = [f for f in VIDEOS.rglob(n) if f.is_file() and not f.is_symlink()] if VIDEOS.is_dir() else []
+        if st.get("video_bytes"):  # the same size as the video the episode started with
+            found = [f for f in found if f.stat().st_size == st["video_bytes"]]
+        if len(found) > 1:  # e.g. two clients' "Timeline 1.mp4": don't guess
+            log(name, f"more than one {n} in Source files ({', '.join(str(f.parent.name) for f in found)}): "
+                      "rename the one that isn't this episode's")
+            return
+        if found:
+            found = found[0]
+            break
+    else:
         return
     if not v.exists():
         if v.is_symlink() and v.parent == VIDEOS:
@@ -272,18 +282,25 @@ def advance(name):
                     run(name, [PY, "dokkpick.py", name] + (["--claude"] if how == "mac" else []) + who)
                 st["step"] = "review"
             elif step == "review":
+                st.pop("finish_started", None)
                 if not (OUT / name / "posts.json").exists():
                     run(name, [PY, "dokkpost.py", "plan", name, "--start", st.get("start") or next_start()])
                 run(name, [PY, "dokkpost.py", "review", name] + (["--music", st["music"]] if st.get("music") else []))
                 notify(f"{st.get('guest') or name}: the clips are ready to review")  # the app page opens the review
                 st["status"] = "waiting"; st["waiting"] = "review"; save_state(name, st); return
             elif step == "finish":
-                saved = newest_saved(name)
-                if saved:
-                    run(name, [PY, "dokkpost.py", "apply", name, saved])
-                run(name, [PY, "dokkpost.py", "finish", name] + (["--title", st["guest"]] if st.get("guest") else [])
-                    + (["--music", st["music"]] if st.get("music") else []))
-                st["step"] = "done"; st["status"] = "done"; st["zip"] = find_zip(name, st.get("guest"))
+                zt = OUT / name / "zip.txt"
+                if st.get("finish_started") and zt.exists() and zt.stat().st_mtime > st["finish_started"]:
+                    log(name, "the clips and zip were finished while Offcuts was closed")  # don't make them twice
+                else:
+                    st["finish_started"] = time.time(); save_state(name, st)
+                    saved = newest_saved(name)
+                    if saved:
+                        run(name, [PY, "dokkpost.py", "apply", name, saved])
+                    run(name, [PY, "dokkpost.py", "finish", name] + (["--title", st["guest"]] if st.get("guest") else [])
+                        + (["--music", st["music"]] if st.get("music") else []))
+                st.pop("finish_started", None)
+                st["step"] = "done"; st["status"] = "done"; st["zip"] = episode_zip(name, st) or find_zip(name, st.get("guest"))
                 save_state(name, st)
                 notify(f"{st.get('guest') or name}: the posting kit and zip are ready")
                 return
@@ -301,10 +318,6 @@ def page(name, path):
     return f"http://127.0.0.1:{PORT}/ep/{quote(name)}/{quote(path)}"
 
 
-UPLOAD = {"tiktok": "https://www.tiktok.com/tiktokstudio/upload",
-          "instagram": "https://business.facebook.com/latest/composer",
-          "youtube": "https://studio.youtube.com",
-          "linkedin": "https://www.linkedin.com/feed/?shareActive=true"}
 
 
 def calendar():
@@ -319,7 +332,10 @@ def calendar():
         posts = json.loads((wd / "posts.json").read_text())["posts"]
         posted = json.loads((wd / "posted.json").read_text()) if (wd / "posted.json").exists() else {}
         for p in [p for p in posts if p.get("approved")] or posts:  # as the kit has them
-            d = f"{datetime.fromisoformat(p['when']):%Y-%m-%d %a} clip{p['clip']}"
+            try:
+                d = f"{datetime.fromisoformat(p['when']):%Y-%m-%d %a} clip{p['clip']}"
+            except (KeyError, TypeError, ValueError):  # no usable date: leave it off rather than break the calendar
+                continue
             kit = wd / "kit" / d
             vids = {}  # a video per platform (older kits) or one per shape
             for pl, on in p.get("platforms", {}).items():
@@ -427,9 +443,12 @@ def tidy(name, st):
     """Once everything's posted: delete the episode's videos from Working files, keeping the zip (the one copy
     that's needed), the transcript, picks and captions, so it can still be remade from the source video."""
     wd = OUT / name
-    z = st.get("zip") if st.get("zip") and Path(st["zip"]).exists() else find_zip(name, st.get("guest"))
+    z = episode_zip(name, st) or find_zip(name, st.get("guest"))
     if not z:
         raise ValueError("can't find this episode's zip in Ready to post, so its videos are staying put")
+    missing = not_in_zip(wd, z)
+    if missing:  # only delete videos the zip really holds
+        raise ValueError(f"{Path(z).name} doesn't hold all of this episode's videos (e.g. {missing[0]}), so they're staying put")
     freed = 0
     for f in [*wd.glob("clips/*.mp4"), *wd.glob("clips/*.mov"), *wd.glob("kit/*/*.mp4"), wd / "audio16k.wav"]:
         if f.is_file():
@@ -443,8 +462,28 @@ def tidy(name, st):
     return freed
 
 
+def not_in_zip(wd, z):
+    """The kit's videos that aren't in the zip (by folder, name and size)."""
+    import zipfile
+    try:
+        with zipfile.ZipFile(z) as zf:
+            have = {(i.filename.split("kit/", 1)[-1], i.file_size) for i in zf.infolist()}
+    except (OSError, zipfile.BadZipFile):
+        return ["anything: it can't be opened"]
+    want = [f for f in (wd / "kit").glob("*/*.mp4")]
+    return [f"{f.parent.name}/{f.name}" for f in want
+            if (f"{f.parent.name}/{f.name}", f.stat().st_size) not in have]
+
+
+def episode_zip(name, st):
+    """This episode's zip: the one its finish made (zip.txt), else the one found for it before."""
+    f = OUT / name / "zip.txt"
+    z = f.read_text().strip() if f.exists() else st.get("zip")
+    return z if z and Path(z).exists() else None
+
+
 def find_zip(name, guest):
-    """This episode's zip, wherever it was left: Ready to post, Movies/Dokkcast, the Desktop or the episode folder."""
+    """An older episode's zip (from before zip.txt), wherever it was left: Ready to post, Movies/Dokkcast, the Desktop or the episode folder."""
     surname = (guest or name).split()[-1].lower()  # the zip may use a shorter name, e.g. Jess for Jessica
     found = []
     for d in (READY, Path.home() / "Movies" / "Dokkcast", Path.home() / "Desktop", OUT / name):
@@ -571,9 +610,17 @@ class Handler(BaseHTTPRequestHandler):
         size = f.stat().st_size
         start, end = 0, size - 1
         m = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range") or "")
-        if m and (m[1] or m[2]):
+        m = m if m and (m[1] or m[2]) else None  # "bytes=-" asks for nothing in particular: the whole file
+        if m:
             start, end = (int(m[1]), int(m[2] or end)) if m[1] else (max(0, size - int(m[2])), end)
             end = min(end, size - 1)
+            if start > end:  # past the end, e.g. the file was made again shorter since
+                fh.close()
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
         self.send_response(206 if m else 200)
         self.send_header("Content-Type", kind)
         self.send_header("Accept-Ranges", "bytes")
@@ -594,7 +641,19 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:  # the player stopped reading, as it does when seeking
             pass
 
+    def local(self):
+        """Only this Mac's own pages: a website open in the browser can't reach the app, by name or by
+        a DNS trick (Host), or post to it from its own page (Origin)."""
+        ok = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
+        origin = self.headers.get("Origin")
+        if self.headers.get("Host") not in ok or (origin and urlparse(origin).netloc not in ok):
+            self.send(403, {"error": "only Offcuts' own pages can use this"})
+            return False
+        return True
+
     def do_GET(self):
+        if not self.local():
+            return
         u = urlparse(self.path)
         if u.path.startswith("/ep/"):  # an episode's review page, kit and clips
             name, _, rest = unquote(u.path[4:]).partition("/")
@@ -649,17 +708,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"episodes": episodes(), "next_start": next_start(), "auto_pick": bool(can_pick()),
                                   "mode": pick_mode(), "has_claude": bool(claude_cli()),
                                   "claude_ready": claude_ready() if pick_mode() == "mac" else None,
-                                  "has_key": bool(os.environ.get("ANTHROPIC_API_KEY") or api_key())})
+                                  "has_key": bool(api_key())})
         self.send(404, {"error": "not found"})
 
     def do_POST(self):
+        if not self.local():
+            return
         u = urlparse(self.path)
-        n = int(self.headers.get("Content-Length") or 0)
-        body = json.loads(self.rfile.read(n) or b"{}")
         try:
+            n = int(self.headers.get("Content-Length") or 0)
+            body = json.loads(self.rfile.read(n) or b"{}")
+            if not isinstance(body, dict):
+                raise ValueError("that request wasn't understood")
             self.send(200, self.action(u.path, body))
-        except ValueError as e:
-            self.send(400, {"error": str(e)})
+        except (ValueError, KeyError) as e:  # a bad request: say what's wrong (JSON errors are ValueErrors too)
+            self.send(400, {"error": f"missing {e}" if isinstance(e, KeyError) else str(e)})
+        except Exception as e:  # anything else still gets an answer, so the page can show it
+            self.send(500, {"error": f"{type(e).__name__}: {e}"})
 
     def action(self, path, b):
         if path == "/api/choose":
@@ -702,15 +767,19 @@ class Handler(BaseHTTPRequestHandler):
             name = re.sub(r"[^\w\- ]", "", b.get("name") or video.stem).strip() or video.stem
             if load_state(name):
                 raise ValueError(f"there's already an episode called {name}")
-            st = {"video": str(video), "music": b.get("music") or None, "guest": b.get("guest", "").strip(),
+            st = {"video": str(video), "video_bytes": video.stat().st_size, "music": b.get("music") or None, "guest": b.get("guest", "").strip(),
                   "role": b.get("role", "").strip(), "start": b.get("start") or None, "photo": b.get("photo") or None,
                   "speakers": int(b.get("speakers") or 2), "step": "prep", "status": "queued", "kit": kit,
                   "created": datetime.now().isoformat(timespec="seconds")}
             if video.stem != name:  # prep names the work folder after the file
                 link = VIDEOS / f"{name}{video.suffix}"
-                if not link.exists():
+                if link.is_symlink() and link.resolve() != video.resolve():
+                    link.unlink()  # left by an earlier episode of that name, pointing at another video
+                if not link.exists() and not link.is_symlink():
                     link.parent.mkdir(parents=True, exist_ok=True)
                     link.symlink_to(video)
+                elif not link.is_symlink() and link.resolve() != video.resolve():
+                    raise ValueError(f"Source files already has a different video called {link.name}: rename one of them")
                 st["video"] = str(link)
             save_state(name, st)
             p = Path.home() / ".dokkcast" / "settings.json"  # the next episode starts with the same kit
@@ -768,11 +837,17 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/cancel":  # stop the episode and put its working files in the Bin (the source video stays)
             pid = st.get("pid")
             if alive(pid):
-                os.kill(pid, signal.SIGTERM)
+                try:
+                    os.killpg(pid, signal.SIGTERM)  # the step and everything it started (renders, ffmpeg)
+                except OSError:
+                    os.kill(pid, signal.SIGTERM)  # started by an older Offcuts, before steps had their own group
             if name in jobs:
                 jobs[name].join(timeout=15)
             if not to_bin(OUT / name):
                 raise ValueError("couldn't move its working files to the Bin: try Open folder and drag it there")
+            v = Path(st.get("video") or "")
+            if v.is_symlink() and v.parent == VIDEOS:  # the episode's name for its video: only a link, not the video
+                v.unlink()
             return {"ok": True}
         if path == "/api/rebrand":  # another brand kit, without transcribing again
             kit = b.get("kit") or ""
@@ -790,10 +865,15 @@ class Handler(BaseHTTPRequestHandler):
             return {"ok": True, "remake": st.get("status") == "done"}
         if path == "/api/keep":  # changed their mind after Change and remake: keep what was made before
             if st.get("waiting") == "review" and (OUT / name / "kit" / "kit.html").exists():
-                st.update(step="done", status="done", waiting=None); save_state(name, st)
+                st.update(step="done", status="done", waiting=None)
+                if st.get("was_tidied"):  # its videos were tidied away before: still only in the zip
+                    st["tidied"] = st["was_tidied"]
+                st.pop("was_tidied", None); save_state(name, st)
             return {"ok": True}
         if path == "/api/reopen":  # back to the review page, e.g. to change captions after rendering
-            st.update(step="review", status="queued", waiting=None); st.pop("tidied", None); save_state(name, st); start(name)
+            if st.get("tidied"):
+                st["was_tidied"] = st.pop("tidied")
+            st.update(step="review", status="queued", waiting=None); save_state(name, st); start(name)
             return {"ok": True}
         if path == "/api/set":  # music, photo, guest, start date
             if b.get("photo"):
@@ -807,7 +887,7 @@ class Handler(BaseHTTPRequestHandler):
             what = {"review": OUT / name / "posts.html", "kit": OUT / name / "kit" / "kit.html",
                     "folder": OUT / name}.get(b.get("what"))
             if b.get("what") == "zip":
-                z = st.get("zip") if st.get("zip") and Path(st["zip"]).exists() else find_zip(name, st.get("guest"))
+                z = episode_zip(name, st) or find_zip(name, st.get("guest"))
                 if not z:
                     raise ValueError("can't find the zip. If it's on your Desktop, macOS may be keeping Offcuts out: "
                                      "allow it in System Settings, Privacy & Security, Files and Folders")

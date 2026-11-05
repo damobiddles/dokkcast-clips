@@ -246,7 +246,10 @@ function draw() {
     }
     setSrc(); layout();
     d.querySelector(".ap").onchange = e => { p.approved = e.target.checked; d.className = "post" + (p.approved ? " ok" : " off"); summary(); };
-    d.querySelector(".when").onchange = e => p.when = e.target.value.replace("T", " ");
+    d.querySelector(".when").onchange = e => {
+      if (!e.target.value) { e.target.value = p.when.replace(" ", "T"); return; }  // every post needs a date
+      p.when = e.target.value.replace("T", " ");
+    };
     const pls = d.querySelector(".pls");
     for (const pl of Object.keys(p.platforms)) {
       const r = document.createElement("div");

@@ -208,7 +208,12 @@ def apply(name, brand, path):
     for p in cur["posts"]:
         n = new.get(p["clip"])
         if n:
-            p.update({k: n[k] for k in ("when", "platforms", "copy", "approved") if k in n})
+            p.update({k: n[k] for k in ("platforms", "copy", "approved") if k in n})
+            try:  # a cleared or garbled date keeps the one planned
+                datetime.fromisoformat(n.get("when") or "")
+                p["when"] = n["when"]
+            except ValueError:
+                pass
             if "frame" in n:
                 frames[p["clip"]] = n["frame"]
     (wd / "posts.json").write_text(json.dumps(cur, indent=1))
@@ -272,6 +277,14 @@ def kit(name, brand):
     wd = work_dir(name)
     data = json.loads((wd / "posts.json").read_text())
     posts = [p for p in data["posts"] if p["approved"]] or data["posts"]
+    clip = lambda p, pl: wd / "clips" / f"{name}_clip{p['clip']}_{brand['social']['shapes'][pl]}.mp4"
+    made = [p for p in posts if any(on and clip(p, pl).exists() for pl, on in p["platforms"].items())]
+    if not made:  # e.g. tidied away since: keep the kit there is rather than leave none
+        sys.exit("none of these clips have been made (or they were tidied away), so the kit stays as it is")
+    for p in posts:
+        if p not in made:
+            print(f"clip {p['clip']} hasn't been made, so it's left out of the kit")
+    posts = made
     out = wd / "kit"
     shutil.rmtree(out, ignore_errors=True)
     for p in posts:
@@ -284,8 +297,10 @@ def kit(name, brand):
         for pl, on in p["platforms"].items():
             if not on:
                 continue
-            shape = brand["social"]["shapes"][pl]
-            src = wd / "clips" / f"{name}_clip{p['clip']}_{shape}.mp4"
+            shape, src = brand["social"]["shapes"][pl], clip(p, pl)
+            if not src.exists():
+                print(f"clip {p['clip']} has no {shape} video, so it's left off {pl}")
+                continue
             dst = d / f"{shape}.mp4"  # one video per shape: TikTok, Instagram and YouTube share the portrait one
             if not dst.exists():
                 try:
@@ -319,11 +334,15 @@ def make_zip(name, title=None, brand=None):
     out = READY if READY.is_dir() or STUDIO else wd  # Ready to post (or ~/Movies/Dokkcast); next to the kit otherwise
     out.mkdir(parents=True, exist_ok=True)
     z = out / f"{((brand or {}).get('show') or {}).get('zip', 'Dokkcast posts')} - {title}.zip"
+    mine = (wd / "zip.txt").read_text().strip() if (wd / "zip.txt").exists() else None
+    if z.exists() and str(z) != mine:  # another episode's zip (same show and guest): never write over it
+        z = z.with_name(f"{z.stem} ({name}).zip")
     z.unlink(missing_ok=True)
     if shutil.which("ditto"):
         subprocess.run(["ditto", "-c", "-k", "--keepParent", str(wd / "kit"), str(z)], check=True)
     else:
         shutil.make_archive(str(z.with_suffix("")), "zip", wd, "kit")
+    (wd / "zip.txt").write_text(str(z))  # so the app knows which zip is this episode's
     print(f"{z} ({z.stat().st_size / 1e6:.0f} MB)")
     return z
 
@@ -336,7 +355,7 @@ def finish(name, brand, music=None, title=None):
     g = ROOT / "dokkgraphics.py"
     if g.exists():
         # the covers name the guest: whichever speaker isn't the host (the speaker numbers vary by episode)
-        host = brand.get("pick", {}).get("host", "Dr. Nara Daubeney")
+        host = brand.get("pick", {}).get("host", "")  # from the brand kit
         speakers = load_plan(wd).get("speakers", {})
         guest = next((k for k, v in speakers.items()
                       if v.get("name") != host and v.get("role", "").lower() != "host"), None)

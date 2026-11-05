@@ -488,11 +488,12 @@ def render_clips(name, brand, only_id=None):
             f"[0:v]{video_trim(segs, info['fps'])}[v]", "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-crf", "14",
             "-preset", "fast", "-pix_fmt", "yuv420p", "-c:a", "pcm_s16le", "-t", f"{dur:.3f}", str(src.with_suffix(".mov"))])
         src = src.with_suffix(".mov")
-        cw, aside = [], False
+        cw, aside = [], 0
         for w in words:
-            # sound notes from the transcriber, e.g. "(laughs)" or "[static]", never go on screen
+            # sound notes from the transcriber, e.g. "(laughs)" or "[static]", never go on screen; one left
+            # unclosed ends after a few words rather than hiding the rest of the captions
             if aside or re.match(r"[(\[]", w["w"]):
-                aside = not re.search(r"[)\]][.,!?]*$", w["w"])
+                aside = 0 if re.search(r"[)\]][.,!?]*$", w["w"]) or aside >= 5 else aside + 1
                 continue
             # a word straddling a join keeps only its surviving piece; mostly-cut words are dropped so they don't flash
             ps = kept_pieces(w["s"], w["e"], segs)
@@ -500,7 +501,8 @@ def render_clips(name, brand, only_id=None):
                 continue
             a, b = max(ps, key=lambda q: q[1] - q[0])
             cw.append({"w": w["w"], "s": round(fwd(a), 3), "e": round(fwd(b), 3)})
-        cw = dokkclip.fix_ends(fix_names(cw, cfg["spellings"]), dur)
+        # the show's spellings, then this episode's own (plan.json "spellings", e.g. a guest's name)
+        cw = dokkclip.fix_ends(fix_names(cw, dict(cfg["spellings"], **plan.get("spellings", {}))), dur)
         (cdir / f"{stem}.words.json").write_text(json.dumps(cw, indent=1))
         ct = []
         for t in turns:

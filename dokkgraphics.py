@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Social graphics for an episode's clips: one branded cover per clip in square,
-portrait and landscape, using a photo of the guest and the clip titles from plan.json.
+"""Social graphics for an episode's clips: one branded cover per clip in each shape that's posted
+(brand.json social "shapes": portrait and square), using a photo of the guest and the clip titles from plan.json.
 
     python dokkgraphics.py Marcela --photo output/Marcela/photo.jpg --title "The truth about GLP-1 weight loss"
 
-Writes output/<name>/graphics/<name>_clipN_{square,portrait,landscape}.png, plus
+Writes output/<name>/graphics/<name>_clipN_<shape>.png (landscape too with --all-shapes), plus
 <name>_episode_*.png when --title is given. --focus x,y (0-1) says where the face is in the photo.
 """
 import argparse, json, tempfile
@@ -120,6 +120,7 @@ def main():
     p.add_argument("--guest", default="1", help="speaker number of the guest in plan.json")
     p.add_argument("--title", help="episode title: also makes an episode graphic")
     p.add_argument("--brand", default=str(ROOT / "brand.json"))
+    p.add_argument("--all-shapes", action="store_true", help="landscape too, though nothing posts it")
     a = p.parse_args()
     from PIL import Image
     brand = load_brand(a.brand, a.name)
@@ -133,13 +134,14 @@ def main():
         logo = Image.open(Path(tmp) / "logo.png").convert("RGBA") if make_logo(lb, Path(tmp) / "logo.png") else None
     out = wd / "graphics"; out.mkdir(exist_ok=True)
     jobs = [(f"{a.name}_episode", "New episode", a.title)] if a.title else []
-    jobs += [(f"{a.name}_clip{c['id']}", brand.get("show", {}).get("kicker", "The Dokkcast"), c["title"]) for c in plan.get("clips", []) if not c.get("skip")]
+    jobs += [(f"{a.name}_clip{c['id']}", brand["show"]["kicker"], c["title"]) for c in plan.get("clips", []) if not c.get("skip")]
+    shapes = list(SHAPES) if a.all_shapes else [s for s in SHAPES if s in brand["social"]["shapes"].values()]
     for stem, kicker, title in jobs:
-        for shape in SHAPES:
+        for shape in shapes:
             graphic(brand, shape, photo, focus, logo, kicker, title, who.get("name", ""), who.get("role", ""),
                     out / f"{stem}_{shape}.png")
         print(f"{stem}: {title}")
-    print(f"{len(jobs) * len(SHAPES)} graphics -> {out}")
+    print(f"{len(jobs) * len(shapes)} graphics -> {out}")
 
 
 if __name__ == "__main__":

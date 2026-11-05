@@ -372,11 +372,12 @@ function draw() {
       const row = b.closest(".row");
       row.innerHTML = `<select class="kitpick">${kits.map(k => `<option ${k.name === ep.kit ? "selected" : ""}>${esc(k.name)}</option>`).join("")}</select>
         <button class="primary" data-ok>Use this brand</button><button data-no>Keep the current one</button>`;
-      paused = true;
-      row.querySelector("[data-no]").onclick = () => { paused = false; refresh(); };
+      paused = true;  // until a choice is made, or a minute passes, so updates don't stop for good
+      const resume = setTimeout(() => { paused = false; refresh(); }, 60000);
+      row.querySelector("[data-no]").onclick = () => { clearTimeout(resume); paused = false; refresh(); };
       row.querySelector("[data-ok]").onclick = async () => {
         const kit = row.querySelector(".kitpick").value;
-        paused = false;
+        clearTimeout(resume); paused = false;
         if (kit === ep.kit) return refresh();
         const r = await post("/api/rebrand", { name, kit });
         toast(r.remake ? `Now ${kit}. Press Change and remake to make the clips with it.` :
