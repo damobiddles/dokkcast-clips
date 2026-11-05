@@ -14,6 +14,11 @@ import argparse, difflib, io, json, os, re, subprocess, sys, wave
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+# Set up as the Offcuts app, the program sits in <Offcuts>/App with everything a person uses beside it:
+# Videos (episodes and music go in), Ready to post (a zip per episode comes out) and Working files.
+STUDIO = ROOT.parent if ROOT.name == "App" else None
+VIDEOS = STUDIO / "Videos" if STUDIO else Path("~/Movies/Dokkcast").expanduser()
+READY = STUDIO / "Ready to post" if STUDIO else Path("~/Movies/Dokkcast").expanduser()
 # Homebrew's ffmpeg-full has libass for captions and is not on PATH by default
 for _d in ("/opt/homebrew/opt/ffmpeg-full/bin", "/usr/local/opt/ffmpeg-full/bin"):
     if Path(_d).is_dir():

@@ -112,6 +112,19 @@ Podcast Studio); the clips, covers and kit keep the show's branding from the res
 logo and icon files go in `assets/studio/` (from the MBMS brand kit; not kept in git). Run
 `scripts/make_app.sh` again after changing them.
 
+### Where things are
+
+On the Mac the app lives in one folder, ~/Offcuts:
+
+    Videos/            new episode videos and music go here (Choose… opens here)
+    Ready to post/     one zip per finished episode: clips, covers and captions
+    Working files/     each episode's workings (transcripts, clips, kit); the app looks after it
+    App/               this repository, with its .venv and models (output/ links to ../Working files)
+    Where things are.txt
+
+`dokkclip.py` works this out from the repository's folder being called `App`; anywhere else, videos
+and zips stay in ~/Movies/Dokkcast as before.
+
 ### One episode, start to finish
 
 1. `python dokkepisode.py prep ~/Movies/Dokkcast/<Guest>.mp4`: transcript in output/<Guest>/.

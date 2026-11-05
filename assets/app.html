@@ -108,7 +108,7 @@
 <header><div class="wrap wide brand">
   <img id="logo" alt="" hidden>
   <div><h1 id="name">Studio</h1><div class="sub" id="tagline"></div></div>
-  <nav><a href="#calendar" data-view="calendar">Calendar</a><a href="#episodes" data-view="episodes">Episodes<span class="n" id="n-eps" hidden></span></a><a href="#new" data-view="new">New episode</a></nav>
+  <nav><a href="#calendar" data-view="calendar">Calendar</a><a href="#episodes" data-view="episodes">Episodes<span class="n" id="n-eps" hidden></span></a><a href="#new" data-view="new">New episode</a><a href="#" id="home-folder" title="Videos, Ready to post and Working files">Offcuts folder</a></nav>
 </div></header>
 <main><div class="wrap wide">
   <div class="card attn" id="attn" hidden></div>
@@ -339,7 +339,8 @@ function drawCal() {
   const eps = [...new Map(cal.posts.map(p => [p.episode, p.guest])).entries()];
   sel.innerHTML = `<option value="">All episodes</option>` + eps.map(([e, g]) => `<option value="${esc(e)}">${esc(g)}</option>`).join("");
   sel.value = eps.some(([e]) => e === chosen) ? chosen : "";
-  document.querySelectorAll("#when button").forEach(b => b.classList.toggle("on", b.dataset.when === filt.when));
+  document.getElementById("home-folder").onclick = e => { e.preventDefault(); post("/api/home"); };
+document.querySelectorAll("#when button").forEach(b => b.classList.toggle("on", b.dataset.when === filt.when));
   const today = new Date().toISOString().slice(0, 10);
   let posts = cal.posts.filter(p => !sel.value || p.episode === sel.value);
   const todo = posts.filter(p => !isPosted(p));

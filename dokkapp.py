@@ -23,8 +23,9 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
-ROOT = Path(__file__).resolve().parent
-OUT = ROOT / "output"
+from dokkclip import READY, ROOT, STUDIO, VIDEOS
+
+OUT = ROOT / "output"  # in the app, a link to <Offcuts>/Working files
 PY = sys.executable
 PORT = int(os.environ.get("DOKK_PORT", 8765))
 STEPS = ["prep", "pick", "review", "finish"]
@@ -83,7 +84,8 @@ def choose(kind):
     types = {"video": '{"public.movie"}', "music": '{"public.audio"}', "photo": '{"public.image"}'}
     prompts = {"video": "Choose the episode video", "music": "Choose the music track",
                "photo": "Choose a photo of the guest (for the covers)"}
-    return mac(f'POSIX path of (choose file with prompt "{prompts[kind]}" of type {types[kind]})')
+    where = f' default location (POSIX file "{VIDEOS}")' if kind != "photo" and VIDEOS.is_dir() else ""
+    return mac(f'POSIX path of (choose file with prompt "{prompts[kind]}" of type {types[kind]}{where})')
 
 
 def next_start():
@@ -146,7 +148,7 @@ def readable(path, what):
         with open(path, "rb") as f:
             f.read(1)
     except PermissionError:
-        raise ValueError(f"macOS isn't letting the app read the {what} there. Put it in your Movies folder "
+        raise ValueError(f"macOS isn't letting the app read the {what} there. Put it in Offcuts' Videos folder "
                          "(or allow the app in System Settings, Privacy & Security, Files and Folders)")
 
 
@@ -300,10 +302,10 @@ def calendar():
 
 
 def find_zip(name, guest):
-    """This episode's zip, wherever it was left: Movies/Dokkcast, the Desktop or the episode folder."""
+    """This episode's zip, wherever it was left: Ready to post, Movies/Dokkcast, the Desktop or the episode folder."""
     surname = (guest or name).split()[-1].lower()  # the zip may use a shorter name, e.g. Jess for Jessica
     found = []
-    for d in (Path.home() / "Movies" / "Dokkcast", Path.home() / "Desktop", OUT / name):
+    for d in (READY, Path.home() / "Movies" / "Dokkcast", Path.home() / "Desktop", OUT / name):
         try:  # macOS may not let the app look in the Desktop
             found += [f for f in os.scandir(d) if f.name.startswith("Dokkcast posts - ") and f.name.endswith(".zip")
                       and surname in f.name.lower() and "before" not in f.name.lower()]
@@ -485,7 +487,7 @@ class Handler(BaseHTTPRequestHandler):
                   "speakers": int(b.get("speakers") or 2), "step": "prep", "status": "queued",
                   "created": datetime.now().isoformat(timespec="seconds")}
             if video.stem != name:  # prep names the work folder after the file
-                link = Path.home() / "Movies" / "Dokkcast" / f"{name}{video.suffix}"
+                link = VIDEOS / f"{name}{video.suffix}"
                 if not link.exists():
                     link.parent.mkdir(parents=True, exist_ok=True)
                     link.symlink_to(video)
@@ -545,6 +547,9 @@ class Handler(BaseHTTPRequestHandler):
                     st[k] = b[k]
             save_state(name, st)
             return {"ok": True}
+        if path == "/api/home":  # the Offcuts folder, with Videos and Ready to post
+            subprocess.run(["open", str(STUDIO or ROOT)])
+            return {"ok": True}
         if path == "/api/open":
             what = {"review": OUT / name / "posts.html", "kit": OUT / name / "kit" / "kit.html",
                     "folder": OUT / name}.get(b.get("what"))
@@ -565,6 +570,15 @@ def main():
     if not shutil.which("ffmpeg"):
         sys.exit("ffmpeg not found: run ./setup.sh first")
     OUT.mkdir(exist_ok=True)
+    if STUDIO:  # the folders a person uses, and a note on what each is for
+        VIDEOS.mkdir(exist_ok=True); READY.mkdir(exist_ok=True)
+        (STUDIO / "Where things are.txt").write_text(
+            "Offcuts\n\n"
+            "Videos           Put each new episode video and its music track here, then choose them in Offcuts.\n"
+            "Ready to post    One zip per finished episode: the clips, covers and captions to share or post from.\n"
+            "Working files    Offcuts' own workings (transcripts, clips, covers). No need to open it.\n"
+            "App              The program itself. Leave it be.\n\n"
+            "Day to day, open Offcuts: the Calendar shows each day's posts, ready to copy and drag in.\n")
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     for name in [p.parent.name for p in OUT.glob("*/app.json")]:  # carry on with anything that was running
         if load_state(name).get("status") in ("running", "queued"):

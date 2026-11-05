@@ -7,7 +7,7 @@
     python dokkpost.py review Marcela --music ~/Movies/Dokkcast/track.wav   # same, with a music slider to set the mix
     python dokkpost.py apply Marcela ~/Downloads/posts.json   # take the choices saved from posts.html
     python dokkpost.py kit Marcela                  # posting kit to upload by hand: output/Marcela/kit/
-    python dokkpost.py zip Marcela                  # the kit as ~/Movies/Dokkcast/Dokkcast posts - <guest>.zip
+    python dokkpost.py zip Marcela                  # the kit as Dokkcast posts - <guest>.zip in Ready to post
     python dokkpost.py finish Marcela --music ~/Movies/Dokkcast/track.wav   # render approved clips, graphics, kit, zip
     python dokkpost.py channels                     # check the Postiz login and list connected accounts
     python dokkpost.py schedule Marcela             # dry run: what would go out, and each channel's rules
@@ -39,7 +39,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from dokkclip import ROOT, load_brand
+from dokkclip import READY, ROOT, STUDIO, load_brand
 from dokkepisode import load_plan
 
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -244,8 +244,8 @@ def make_zip(name, title=None):
         speakers = load_plan(wd).get("speakers", {}).values()
         guest = next((w["name"] for w in speakers if w.get("name") and "host" not in w.get("role", "").lower()), name)
         title = re.sub(r"^(Dr|Prof|Professor|Mr|Mrs|Ms|Miss)\.?\s+", "", guest)
-    out = Path("~/Movies/Dokkcast").expanduser()  # where the episode videos live; next to the kit otherwise
-    out = out if out.is_dir() else wd
+    out = READY if READY.is_dir() or STUDIO else wd  # Ready to post (or ~/Movies/Dokkcast); next to the kit otherwise
+    out.mkdir(parents=True, exist_ok=True)
     z = out / f"Dokkcast posts - {title}.zip"
     z.unlink(missing_ok=True)
     if shutil.which("ditto"):
