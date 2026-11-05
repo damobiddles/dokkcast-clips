@@ -291,7 +291,8 @@ def calendar():
                 continue
             out.append({"episode": name, "guest": st.get("guest") or name, "role": st.get("role", ""),
                         "when": p["when"].replace(" ", "T"), "clip": p["clip"], "title": p.get("title", ""),
-                        "copy": p.get("copy", {}), "platforms": pls, "dir": f"kit/{d}",
+                        "copy": dict(p.get("copy", {}), youtube_title=re.sub(r"\s*#\w+", "", p.get("copy", {}).get("youtube_title", "")).strip()),
+                        "platforms": pls, "dir": f"kit/{d}",
                         "files": {pl: page(name, f"kit/{d}/{pl}.mp4") for pl in pls},
                         "covers": [page(name, f"kit/{d}/{c.name}") for c in sorted(kit.glob("cover *.png"))],
                         "posted": posted.get(str(p["clip"]), {})})
@@ -301,8 +302,14 @@ def calendar():
 def find_zip(name, guest):
     """This episode's zip, wherever it was left: Movies/Dokkcast, the Desktop or the episode folder."""
     surname = (guest or name).split()[-1].lower()  # the zip may use a shorter name, e.g. Jess for Jessica
-    found = [f for d in (Path.home() / "Movies" / "Dokkcast", Path.home() / "Desktop", OUT / name) if d.is_dir()
-             for f in d.glob("Dokkcast posts - *.zip") if surname in f.stem.lower() and "before" not in f.stem.lower()]
+    found = []
+    for d in (Path.home() / "Movies" / "Dokkcast", Path.home() / "Desktop", OUT / name):
+        try:  # macOS may not let the app look in the Desktop
+            found += [f for f in os.scandir(d) if f.name.startswith("Dokkcast posts - ") and f.name.endswith(".zip")
+                      and surname in f.name.lower() and "before" not in f.name.lower()]
+        except OSError:
+            continue
+    found = [Path(f.path) for f in found]
     return str(max(found, key=lambda f: f.stat().st_mtime)) if found else None
 
 
@@ -544,7 +551,9 @@ class Handler(BaseHTTPRequestHandler):
             if b.get("what") == "zip":
                 z = st.get("zip") if st.get("zip") and Path(st["zip"]).exists() else find_zip(name, st.get("guest"))
                 if not z:
-                    raise ValueError("can't find the zip: it may have been moved or deleted")
+                    raise ValueError("can't find the zip. If it's on your Desktop, macOS may be keeping Offcuts out: "
+                                     "allow it in System Settings, Privacy & Security, Files and Folders")
+                st["zip"] = z; save_state(name, st)
                 subprocess.run(["open", "-R", z])
             elif what and what.exists():
                 subprocess.run(["open", str(what)])

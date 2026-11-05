@@ -96,8 +96,7 @@
   .pl .name { font-weight: 700; min-width: 112px; }
   .pl label { display: flex; gap: 6px; align-items: center; margin-left: auto; font-size: 13px; cursor: pointer; }
   .pl label input { accent-color: var(--ok); width: 16px; height: 16px; }
-  .cap { font-size: 13px; color: var(--dim); white-space: pre-wrap; margin-top: 6px; max-height: 3.9em; overflow: hidden; cursor: pointer; }
-  .cap.open { max-height: none; color: var(--text); }
+  .cap { font-size: 13px; color: var(--dim); white-space: pre-wrap; margin-top: 6px; }
   .cap.ytt { color: var(--text); font-weight: 600; max-height: none; }
   button.copied { border-color: var(--ok); color: var(--ok); }
   .empty { text-align: center; padding: 40px 16px; color: var(--dim); }
@@ -294,6 +293,8 @@ function draw() {
   });
   box.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
     const name = b.closest(".card").dataset.name, act = b.dataset.act;
+    if (act === "reopen" && !confirm("Go back to the review? Making the clips again takes about 20 minutes. " +
+        "You can still keep the ones already made.")) return;
     if (act === "photo") {
       const { path } = await post("/api/choose", { kind: "photo" });
       if (path) await post("/api/set", { name, photo: path });
@@ -372,7 +373,7 @@ function drawCal() {
             <a href="${esc(cal.upload[pl])}" target="_blank" rel="noopener"><button>Open ${NAMES[pl] || pl}</button></a>
             <label><input type="checkbox" ${p.posted[pl] ? "checked" : ""}> Posted</label></div>
           ${pl === "youtube" ? `<div class="cap ytt">${esc(p.copy.youtube_title)}</div>` : ""}
-          <div class="cap" title="Click to see it all">${esc(p.copy[pl])}</div></div>`).join("")}
+          <div class="cap">${esc(p.copy[pl])}</div></div>`).join("")}
       </div></div>`;
   }
   box.innerHTML = html;
@@ -380,7 +381,6 @@ function drawCal() {
     const p = cal.posts.find(x => x.episode === el.dataset.ep && String(x.clip) === el.dataset.clip);
     el.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copy(b, p.copy[b.dataset.copy] || ""));
     el.querySelectorAll("[data-file]").forEach(b => b.onclick = () => post("/api/reveal", { name: p.episode, path: b.dataset.file }));
-    el.querySelectorAll(".cap:not(.ytt)").forEach(c => c.onclick = () => c.classList.toggle("open"));
     el.querySelectorAll(".pl input").forEach(i => i.onchange = async () => {
       const pl = i.closest(".pl").dataset.pl;
       await post("/api/posted", { name: p.episode, clip: p.clip, platform: pl, done: i.checked });
