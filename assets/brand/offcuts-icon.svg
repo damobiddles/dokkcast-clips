@@ -1,31 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2B2C31"/>
-      <stop offset="1" stop-color="#0B0B0D"/>
-    </linearGradient>
-    <radialGradient id="sheen" cx="0.3" cy="0" r="0.9">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.10"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="clip" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#D9D7D2"/>
-    </linearGradient>
-    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FFC24B"/>
-      <stop offset="1" stop-color="#FF8A3D"/>
-    </linearGradient>
-    <filter id="lift" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000" flood-opacity="0.45"/>
-    </filter>
-  </defs>
-  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
-  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sheen)"/>
-  <!-- a clip (a tall rounded frame) with one corner cut away; the corner is the offcut -->
-  <g filter="url(#lift)" transform="translate(-14 12)">
-    <path d="M 392 262 L 556 262 L 690 396 L 690 712 Q 690 762 640 762 L 392 762 Q 342 762 342 712 L 342 312 Q 342 262 392 262 Z" fill="url(#clip)"/>
-    <path d="M 556 262 L 646 262 Q 690 262 690 306 L 690 396 Z" fill="url(#amber)" transform="translate(40 -40)"/>
-    <path d="M 478 462 L 478 618 L 600 540 Z" fill="#17181B" stroke="#17181B" stroke-width="30" stroke-linejoin="round"/>
-  </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><defs>
+<linearGradient id="bg" x1="0.5" y1="0" x2="0.5" y2="1"><stop offset="0" stop-color="#2E2F34"/><stop offset="1" stop-color="#0B0B0D"/></linearGradient>
+<linearGradient id="w" x1="0.5" y1="0" x2="0.5" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#D9D8D4"/></linearGradient>
+<linearGradient id="a" x1="0.5" y1="0" x2="0.5" y2="1"><stop offset="0" stop-color="#FFC94D"/><stop offset="1" stop-color="#FF9500"/></linearGradient>
+<clipPath id="u"><path d="M0 0H1024V390L0 760Z"/></clipPath><clipPath id="l"><path d="M0 760L1024 390V1024H0Z"/></clipPath></defs><rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/><g clip-path="url(#u)" transform="translate(-14 -14)"><circle cx="512" cy="512" r="256" fill="url(#w)"/></g>
+<g transform="translate(40 30)"><g clip-path="url(#l)"><circle cx="512" cy="512" r="256" fill="url(#a)"/></g></g>
+<rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="3"/></svg>
