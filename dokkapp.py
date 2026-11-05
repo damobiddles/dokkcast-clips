@@ -559,6 +559,7 @@ def episodes(logs=True):
         st["kit_url"] = page(st["name"], "kit/kit.html")
         st["kit"] = st.get("kit") or DEFAULT_KIT
         st["all_posted"] = all_posted(p.parent)
+        st["no_covers"] = st.get("status") == "done" and (p.parent / "kit").is_dir() and not any((p.parent / "kit").glob("*/cover *.png"))
         out.append(st)
     return out
 

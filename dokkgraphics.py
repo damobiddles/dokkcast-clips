@@ -53,6 +53,17 @@ def cover(photo, box, focus):
     return im.crop((x, y, x + bw, y + bh))
 
 
+def still(video, clip):
+    """A frame from the middle of a clip, for its cover when there's no photo of the guest."""
+    import subprocess
+    from PIL import Image
+    with tempfile.TemporaryDirectory() as tmp:
+        f = Path(tmp) / "still.jpg"
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{(clip['s'] + clip['e']) / 2:.2f}", "-i", str(video),
+                        "-frames:v", "1", "-q:v", "2", str(f)], capture_output=True)
+        return Image.open(f).convert("RGB") if f.exists() else None
+
+
 def graphic(brand, shape, photo, focus, logo, kicker, title, name, role, out):
     from PIL import Image, ImageDraw
     L = SHAPES[shape]; W, H = L["size"]
@@ -98,11 +109,12 @@ def graphic(brand, shape, photo, focus, logo, kicker, title, name, role, out):
     for line in lines:
         d.text((x0, y), line, font=tf, fill=(255, 255, 255))
         y += size * 1.08
-    y += size * 0.35
-    d.rounded_rectangle([x0, y, x0 + 120, y + 10], radius=5, fill=hi)
-    y += size * 0.55
-    d.text((x0, y), name, font=nf, fill=(255, 255, 255))
-    y += nf.size * 1.3
+    if name:  # the guest's name under an accent bar (a solo show has none)
+        y += size * 0.35
+        d.rounded_rectangle([x0, y, x0 + 120, y + 10], radius=5, fill=hi)
+        y += size * 0.55
+        d.text((x0, y), name, font=nf, fill=(255, 255, 255))
+        y += nf.size * 1.3
     if role:
         d.text((x0, y), role, font=rf, fill=hi)
     if logo:
@@ -115,7 +127,7 @@ def graphic(brand, shape, photo, focus, logo, kicker, title, name, role, out):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("name", help="episode name, as in output/<name>/")
-    p.add_argument("--photo", help="photo of the guest (default output/<name>/photo.jpg)")
+    p.add_argument("--photo", help="photo of the guest (default output/<name>/photo.jpg; none: a still from each clip)")
     p.add_argument("--focus", default="0.5,0.35", help="where the face is in the photo, as x,y from 0 to 1")
     p.add_argument("--guest", default="1", help="speaker number of the guest in plan.json")
     p.add_argument("--title", help="episode title: also makes an episode graphic")
@@ -126,19 +138,24 @@ def main():
     brand = load_brand(a.brand, a.name)
     wd = ROOT / "output" / a.name
     plan = json.loads((wd / "plan.json").read_text())
-    who = plan["speakers"].get(a.guest, {})
-    photo = Image.open(a.photo or wd / "photo.jpg").convert("RGB")
+    who = plan.get("speakers", {}).get(a.guest, {})
+    pf = Path(a.photo) if a.photo else wd / "photo.jpg"
+    photo = Image.open(pf).convert("RGB") if pf.exists() else None  # none: each cover uses a still from its clip
     focus = tuple(float(v) for v in a.focus.split(","))
     with tempfile.TemporaryDirectory() as tmp:
         lb = dict(brand, logo=dict(brand["logo"], width=900))
         logo = Image.open(Path(tmp) / "logo.png").convert("RGBA") if make_logo(lb, Path(tmp) / "logo.png") else None
     out = wd / "graphics"; out.mkdir(exist_ok=True)
-    jobs = [(f"{a.name}_episode", "New episode", a.title)] if a.title else []
-    jobs += [(f"{a.name}_clip{c['id']}", brand["show"]["kicker"], c["title"]) for c in plan.get("clips", []) if not c.get("skip")]
+    clips = [c for c in plan.get("clips", []) if not c.get("skip")]
+    jobs = [(f"{a.name}_episode", "New episode", a.title, clips[0] if clips else None)] if a.title else []
+    jobs += [(f"{a.name}_clip{c['id']}", brand["show"]["kicker"], c["title"], c) for c in clips]
     shapes = list(SHAPES) if a.all_shapes else [s for s in SHAPES if s in brand["social"]["shapes"].values()]
-    for stem, kicker, title in jobs:
+    for stem, kicker, title, clip in jobs:
+        pic = photo or (still(plan["video"], clip) if clip else None)
+        if pic is None:
+            print(f"{stem}: no photo and no still from the video, so no cover"); continue
         for shape in shapes:
-            graphic(brand, shape, photo, focus, logo, kicker, title, who.get("name", ""), who.get("role", ""),
+            graphic(brand, shape, pic, focus, logo, kicker, title, who.get("name", ""), who.get("role", ""),
                     out / f"{stem}_{shape}.png")
         print(f"{stem}: {title}")
     print(f"{len(jobs) * len(shapes)} graphics -> {out}")

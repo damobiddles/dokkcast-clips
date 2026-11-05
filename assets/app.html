@@ -39,7 +39,7 @@
   button { transition: transform .12s, box-shadow .12s; }
   button:hover { border-color: var(--hi); }
   button.primary { background: var(--hi); color: var(--on-hi, #0A0F2C); border: var(--btn-bw, 0) solid var(--btn-line, transparent); font-weight: 700; padding: 9px 18px; font-family: var(--head); }
-  button.danger { color: var(--warn); }
+  button.danger, .status .warn { color: var(--warn); }
   .kitpick { font: inherit; padding: 7px 10px; border-radius: 8px; background: transparent; color: inherit; border: 1px solid currentColor; }
   button.primary:hover { border-color: var(--btn-line, transparent); transform: translate(-2px, -2px); box-shadow: var(--btn-shadow, none); }
   button:disabled { opacity: .5; cursor: default; }
@@ -290,7 +290,8 @@ function status(ep) {
   if (ep.status === "error") return `<div class="status err">Stopped: ${esc(ep.error)}</div>`;
   if (ep.status === "done" && ep.tidied) return `<div class="status">All posted and tidied up: the videos are kept in the zip${ep.zip ? `, ${esc(base(ep.zip))}` : ""}.</div>`;
   if (ep.status === "done" && ep.all_posted) return `<div class="status">All posted. Tidy up to delete its videos from Working files and keep just the zip.</div>`;
-  if (ep.status === "done") return `<div class="status">Done. The zip is ready to share${ep.zip ? `: ${esc(base(ep.zip))}` : ""}.</div>`;
+  if (ep.status === "done") return `<div class="status">Done. The zip is ready to share${ep.zip ? `: ${esc(base(ep.zip))}` : ""}.` +
+    (ep.no_covers ? ` <span class="warn">It has no cover graphics: see Details for why.</span>` : "") + `</div>`;
   if (ep.waiting === "picks") return `<div class="status">Transcribed. Now tell Claude in chat: <b>pick the clips for ${esc(ep.name)}</b>. When Claude says they're in, press Continue.</div>`;
   if (ep.waiting === "review") return `<div class="status">Your turn: open the review, watch the clips, set the music, edit the captions and tick Approve. Then press <b>Save and make the clips</b>.</div>`;
   const what = { prep: "Transcribing and finding the speakers (about 10 minutes)", pick: "Claude is picking the clips and writing the captions",
