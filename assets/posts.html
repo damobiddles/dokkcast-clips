@@ -165,7 +165,12 @@ function draw() {
       const pct = (a, b) => (100 * a / b) + "%";
       const over = !showingMade();
       logo.hidden = !(over && L.logo); cap.hidden = !over || !p.sample || !p.sample.length;
-      if (L.logo) { logo.src = L.logo; logo.style.width = pct(g.logo_w, g.w); logo.style.top = pct(g.logo_y, g.h); }
+      if (L.logo) {
+        logo.src = L.logo;
+        const fl = mode() === "fill" && L.fill_logo;  // filled: smaller, in the top left corner, as the render does
+        Object.assign(logo.style, fl ? { width: pct(g.logo_w * fl.scale, g.w), left: pct(fl.margin, g.w), top: pct(fl.margin, g.h), transform: "none" }
+          : { width: pct(g.logo_w, g.w), left: "50%", top: pct(g.logo_y, g.h), transform: "" });
+      }
       cap.style.top = pct(g.cap_y, g.h); cap.style.setProperty("--fs", g.cap_size / g.w);
       cap.innerHTML = (p.sample || []).map((w, i) => i === 1 ? `<b style="color:${L.hi}">${esc(w)}</b>` : esc(w)).join(" ");
       cap.style.color = L.text; cap.classList.toggle("outlined", mode() === "fill");

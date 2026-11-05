@@ -40,7 +40,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from dokkclip import READY, ROOT, STUDIO, day_off, layout_brand, load_brand
+from dokkclip import FILL_LOGO, READY, ROOT, STUDIO, day_off, layout_brand, load_brand
 from dokkepisode import load_plan
 
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -186,7 +186,7 @@ def look(brand):
     out = {"top": brand["canvas"]["bg_top"], "bottom": brand["canvas"]["bg_bottom"],
            "text": brand["captions"]["color"], "hi": brand["captions"]["highlight"],
            "logo": f"data:{kind};base64," + base64.b64encode(f.read_bytes()).decode() if logo and kind and f.is_file() else None,
-           "shapes": {}}
+           "shapes": {}, "fill_logo": FILL_LOGO}
 
     def geo(name):
         L = brand["layouts"][name]; b = layout_brand(brand, L)

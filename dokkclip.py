@@ -21,7 +21,8 @@ STUDIO = ROOT.parent if ROOT.name == "App" else None
 VIDEOS = STUDIO / "Source files" if STUDIO else Path("~/Movies/Dokkcast").expanduser()
 READY = STUDIO / "Ready to post" if STUDIO else Path("~/Movies/Dokkcast").expanduser()
 KITS = STUDIO / "Brand kits" if STUDIO else ROOT / "brand-kits"  # one folder per client: kit.json and a logo
-DEFAULT_KIT = "The Dokkcast"  # episodes from before brand kits
+DEFAULT_KIT = "The Dokkcast"
+FILL_LOGO = {"scale": 0.55, "margin": 60}  # a filled frame's logo: this much smaller, in the top left corner  # episodes from before brand kits
 # Homebrew's ffmpeg-full has libass for captions and is not on PATH by default
 for _d in ("/opt/homebrew/opt/ffmpeg-full/bin", "/usr/local/opt/ffmpeg-full/bin"):
     if Path(_d).is_dir():
@@ -394,6 +395,8 @@ def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=No
         vfilter = f"crop={ww}:{bh}:{x0}:{by},scale={W}:{vid_h}:flags=lanczos"
         cap = brand["captions"]  # over the picture rather than the plain background: an outline keeps them readable
         cap["outline"], cap["shadow"] = max(cap.get("outline", 0), 4), max(cap.get("shadow", 0), 3)
+        # the logo goes smaller into the top corner, off the speaker's head
+        brand["logo"]["width"] = round(brand["logo"]["width"] * FILL_LOGO["scale"])
     elif L["follow"]:
         ww = L["window_width"]
         turns_json = Path(turns_json) if turns_json else ROOT / "output" / f"{Path(video).stem}.turns.json"
@@ -421,8 +424,11 @@ def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=No
     inputs = ["-i", str(video), "-loop", "1", "-i", str(bg)]
     if make_logo(brand, logo):
         from PIL import Image
-        logo_y = L["logo_center_y"] - Image.open(logo).height // 2
-        fc += f"[a][2:v]overlay={L.get('logo_x', '(W-w)/2')}:{logo_y}[a2];"
+        if frame is not None:
+            lx, logo_y = FILL_LOGO["margin"], FILL_LOGO["margin"]
+        else:
+            lx, logo_y = L.get("logo_x", "(W-w)/2"), L["logo_center_y"] - Image.open(logo).height // 2
+        fc += f"[a][2:v]overlay={lx}:{logo_y}[a2];"
         inputs += ["-loop", "1", "-i", str(logo)]
     else:
         fc += "[a]null[a2];"
