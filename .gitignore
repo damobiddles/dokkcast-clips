@@ -6,3 +6,4 @@ assets/music/*
 !assets/music/.gitkeep
 .venv/
 assets/studio/
+.pre-kits-backup/

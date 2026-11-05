@@ -47,8 +47,9 @@ def mmss(t):
 
 # ------------------------------------------------------------------------ prep
 def prep(video, brand, speakers=2):
+    name = Path(video).expanduser().stem  # the link's name, as the app gave it, not the file it points at
     video = Path(video).expanduser().resolve()
-    wd = work_dir(video.stem); wd.mkdir(parents=True, exist_ok=True)
+    wd = work_dir(name); wd.mkdir(parents=True, exist_ok=True)
     wav = wd / "audio16k.wav"
     if not wav.exists():
         print("extracting audio ...")
