@@ -89,4 +89,11 @@ rm -rf "$tmp"
 # signed for this Mac only, so macOS asks about folder access for the app by its name
 codesign --force --deep -s - "$APP" 2>/dev/null || true
 touch "$APP"
-echo "made $APP. Open it from ~/Applications, or drag it to the Dock."
+# a launcher in the Offcuts folder too, beside Source files and Ready to post (a Finder alias to the app)
+if [ "$(basename "$REPO")" = "App" ]; then
+  rm -f "$(dirname "$REPO")/$NAME"
+  osascript -e "tell application \"Finder\" to make alias file to POSIX file \"$APP\" at POSIX file \"$(dirname "$REPO")\"" \
+    -e "tell application \"Finder\" to set name of result to \"$NAME\"" >/dev/null 2>&1 \
+    || ln -sfn "$APP" "$(dirname "$REPO")/$NAME.app"
+fi
+echo "made $APP. Open it from ~/Applications or the Offcuts folder, or drag it to the Dock."
