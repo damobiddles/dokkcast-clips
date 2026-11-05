@@ -477,8 +477,12 @@ def render_clips(name, brand, only_id=None):
             f"[0:v]{video_trim(segs, info['fps'])}[v]", "-map", "[v]", "-map", "1:a", "-c:v", "libx264", "-crf", "14",
             "-preset", "fast", "-pix_fmt", "yuv420p", "-c:a", "pcm_s16le", "-t", f"{dur:.3f}", str(src.with_suffix(".mov"))])
         src = src.with_suffix(".mov")
-        cw = []
+        cw, aside = [], False
         for w in words:
+            # sound notes from the transcriber, e.g. "(laughs)" or "[static]", never go on screen
+            if aside or re.match(r"[(\[]", w["w"]):
+                aside = not re.search(r"[)\]][.,!?]*$", w["w"])
+                continue
             # a word straddling a join keeps only its surviving piece; mostly-cut words are dropped so they don't flash
             ps = kept_pieces(w["s"], w["e"], segs)
             if not ps or sum(b - a for a, b in ps) < 0.5 * max(w["e"] - w["s"], 0.01):
