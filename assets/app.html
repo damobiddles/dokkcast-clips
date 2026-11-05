@@ -39,6 +39,8 @@
   button { transition: transform .12s, box-shadow .12s; }
   button:hover { border-color: var(--hi); }
   button.primary { background: var(--hi); color: var(--on-hi, #0A0F2C); border: var(--btn-bw, 0) solid var(--btn-line, transparent); font-weight: 700; padding: 9px 18px; font-family: var(--head); }
+  button.danger { color: var(--warn); }
+  .kitpick { font: inherit; padding: 7px 10px; border-radius: 8px; background: transparent; color: inherit; border: 1px solid currentColor; }
   button.primary:hover { border-color: var(--btn-line, transparent); transform: translate(-2px, -2px); box-shadow: var(--btn-shadow, none); }
   button:disabled { opacity: .5; cursor: default; }
   .opt { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; flex-basis: 100%; cursor: pointer; }
@@ -305,7 +307,9 @@ function actions(ep) {
     `<button data-act="open" data-what="zip">Show zip in Finder</button>`, `<button data-act="reopen">Change and remake</button>`);
   if (ep.status === "done" && ep.all_posted && !ep.tidied) b.push(`<button data-act="tidy">Tidy up</button>`);
   if (!ep.running && ep.status !== "done") b.push(`<button data-act="photo">${ep.photo || ep.photo_set ? "Change" : "Add"} guest photo</button>`);
+  if (!ep.running && !ep.tidied) b.push(`<button data-act="rebrand">Change brand</button>`);
   b.push(`<button data-act="open" data-what="folder">Open folder</button>`);
+  if (ep.status !== "done") b.push(`<button class="danger" data-act="cancel">Cancel project</button>`);
   return b.join("");
 }
 function draw() {
@@ -356,6 +360,31 @@ function draw() {
       toast(`Tidied up: ${freed_mb >= 1000 ? (freed_mb / 1000).toFixed(1) + " GB" : freed_mb + " MB"} freed`, true);
       return refresh();
     }
+    if (act === "cancel") {
+      if (!confirm(`Cancel ${ep.guest || name}? It stops, and its working files go to the Bin (you can put them back from there). ` +
+          "The episode video stays in Source files.")) return;
+      await post("/api/cancel", { name });
+      toast("Cancelled: its working files are in the Bin", true);
+      return refresh();
+    }
+    if (act === "rebrand") {
+      const { kits } = await (await fetch("/api/kits")).json();
+      const row = b.closest(".row");
+      row.innerHTML = `<select class="kitpick">${kits.map(k => `<option ${k.name === ep.kit ? "selected" : ""}>${esc(k.name)}</option>`).join("")}</select>
+        <button class="primary" data-ok>Use this brand</button><button data-no>Keep the current one</button>`;
+      paused = true;
+      row.querySelector("[data-no]").onclick = () => { paused = false; refresh(); };
+      row.querySelector("[data-ok]").onclick = async () => {
+        const kit = row.querySelector(".kitpick").value;
+        paused = false;
+        if (kit === ep.kit) return refresh();
+        const r = await post("/api/rebrand", { name, kit });
+        toast(r.remake ? `Now ${kit}. Press Change and remake to make the clips with it.` :
+          `Now ${kit}. The captions were written for ${ep.kit}, so give them a read in the review.`, true);
+        refresh();
+      };
+      return;
+    }
     if (act === "photo") {
       const { path } = await post("/api/choose", { kind: "photo" });
       if (path) await post("/api/set", { name, photo: path });
@@ -366,7 +395,9 @@ function draw() {
   });
 }
 let seen = null;  // each episode's state at the last look, to notice when one becomes ready to review
+let paused = false;  // while a choice is open on a card, so the next refresh doesn't wipe it
 async function refresh() {
+  if (paused) return;
   try {
     state = await (await fetch("/api/state")).json();
     const ready = state.episodes.find(ep => ep.waiting === "review" && seen && seen[ep.name] && seen[ep.name] !== "review");

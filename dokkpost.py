@@ -40,7 +40,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from dokkclip import READY, ROOT, STUDIO, day_off, load_brand
+from dokkclip import READY, ROOT, STUDIO, day_off, layout_brand, load_brand
 from dokkepisode import load_plan
 
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -157,6 +157,17 @@ def review(name, brand, music=None):
             elif "src" in p:  # not rendered yet: play that stretch of the episode
                 p["files"][pl] = p["src"]
     data["shapes"] = brand["social"]["shapes"]
+    data["look"] = look(brand)
+    words = json.loads((wd / "words.json").read_text()) if (wd / "words.json").exists() else []
+    turns = json.loads((wd / "turns.json").read_text()) if (wd / "turns.json").exists() else []
+    byid = {c["id"]: c for c in clips}
+    for p in data["posts"]:  # for the framing preview: who talks in it, how it's framed, and a line of its captions
+        c = byid.get(p["clip"])
+        if not c:
+            continue
+        p["speakers"] = len({t["spk"] for t in turns if t["e"] > c["s"] and t["s"] < c["e"]}) or 1
+        p["frame"] = c.get("frame") or {}
+        p["sample"] = [w["w"] for w in words if c["s"] <= w["s"] < c["e"] and not re.match(r"[(\[]", w["w"])][:3]
     if ep.get("music") and Path(ep["music"]).exists() and mcfg.get("on", True):
         data["music"] = {"src": music_preview(wd, ep), "name": Path(ep["music"]).stem,
                          "db": ep["music_db"] if ep.get("music_db") is not None else mcfg["level_db"]}
@@ -165,15 +176,41 @@ def review(name, brand, music=None):
     print(f"open {wd / 'posts.html'} in a browser")
 
 
+def look(brand):
+    """What the review page needs to draw each shape roughly as the render will: the brand's colours and logo,
+    and per shape where the logo, picture and captions go (the shape's own layout, and the one for one person
+    or a still picture)."""
+    logo = brand["logo"].get("file")
+    f = Path(logo) if logo and Path(logo).is_absolute() else ROOT / (logo or "")
+    kind = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(f.suffix.lower())
+    out = {"top": brand["canvas"]["bg_top"], "bottom": brand["canvas"]["bg_bottom"],
+           "text": brand["captions"]["color"], "hi": brand["captions"]["highlight"],
+           "logo": f"data:{kind};base64," + base64.b64encode(f.read_bytes()).decode() if logo and kind and f.is_file() else None,
+           "shapes": {}}
+
+    def geo(name):
+        L = brand["layouts"][name]; b = layout_brand(brand, L)
+        return {"w": b["canvas"]["width"], "h": b["canvas"]["height"], "logo_y": L["logo_center_y"],
+                "logo_w": b["logo"]["width"], "cap_y": L["captions_center_y"], "cap_size": b["captions"]["size"],
+                "follow": bool(L.get("follow")), "window": L.get("window_width"), "video_y": L.get("video_center_y"),
+                "offset": L.get("video_y_offset", 0)}
+    for shape, layout in brand["clips"]["formats"].items():
+        out["shapes"][shape] = {"own": geo(layout), "still": geo("wide" if layout == "speaker" else layout)}
+    return out
+
+
 def apply(name, brand, path):
     """Take the approvals and copy edits saved from posts.html. Posts already sent are left alone."""
     wd = work_dir(name)
     cur = json.loads((wd / "posts.json").read_text())
+    frames = {}  # clip -> {shape: {"mode", "x"}}, set by dragging on the review page
     new = {p["clip"]: p for p in json.loads(Path(path).expanduser().read_text())["posts"]}
     for p in cur["posts"]:
         n = new.get(p["clip"])
         if n:
             p.update({k: n[k] for k in ("when", "platforms", "copy", "approved") if k in n})
+            if "frame" in n:
+                frames[p["clip"]] = n["frame"]
     (wd / "posts.json").write_text(json.dumps(cur, indent=1))
     ok = [p for p in cur["posts"] if p["approved"]]
     pj = wd / "plan.json"
@@ -182,6 +219,12 @@ def apply(name, brand, path):
         keep = {p["clip"] for p in ok}
         for c in ep.get("clips", []):
             c["skip"] = c["id"] not in keep
+    for c in ep.get("clips", []):
+        f = frames.get(c["id"])
+        if f is not None and f != (c.get("frame") or {}):
+            c["frame"] = f
+            for old in (wd / "clips").glob(f"{name}_clip{c['id']}_*.mp4"):  # made with the old framing
+                old.unlink()
     saved = json.loads(Path(path).expanduser().read_text()).get("music_db")
     if saved is not None:
         ep["music_db"] = saved

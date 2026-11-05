@@ -364,7 +364,14 @@ def layout_brand(brand, L):
     return b
 
 
-def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=None):
+def fill_window(bw, W, H):
+    """The width of the picture kept when it fills the whole canvas: the canvas shape at the picture's height."""
+    return lambda bh: min(bw, round(bh * W / H / 2) * 2)
+
+
+def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=None, frame=None):
+    """frame {"x": 0..1}: fill the whole canvas with the picture, its centre at x across it (set by dragging
+    the preview on the review page), instead of the layout's own framing."""
     work.mkdir(parents=True, exist_ok=True)
     words = json.loads(Path(words_json).read_text())
     L = brand["layouts"][layout]
@@ -374,7 +381,15 @@ def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=No
     dur = float(sh(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video)]).stdout)
     band = L["crop"] if L["crop"] != "auto" else detect_crop(video)
     bw, bh, bx, by = map(int, band.split(":"))
-    if L["follow"]:
+    if frame is not None:
+        ww = fill_window(bw, W, H)(bh)
+        x0 = bx + max(0, min(bw - ww, round(float(frame.get("x", 0.5)) * bw - ww / 2)))
+        vid_h = round(bh * W / ww / 2) * 2
+        vid_y = (H - vid_h) // 2
+        vfilter = f"crop={ww}:{bh}:{x0}:{by},scale={W}:{vid_h}:flags=lanczos"
+        cap = brand["captions"]  # over the picture rather than the plain background: an outline keeps them readable
+        cap["outline"], cap["shadow"] = max(cap.get("outline", 0), 4), max(cap.get("shadow", 0), 3)
+    elif L["follow"]:
         ww = L["window_width"]
         turns_json = Path(turns_json) if turns_json else ROOT / "output" / f"{Path(video).stem}.turns.json"
         turns = json.loads(turns_json.read_text()) if turns_json.exists() else diarize(video, turns_json, brand["models"])

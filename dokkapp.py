@@ -17,7 +17,7 @@ Pick the episode video and a music track, and it runs each step in order:
 Each episode's progress is kept in output/<name>/app.json, so the app can be closed and opened
 again at any point. Nothing leaves the Mac except the transcript, which goes to Claude to pick the clips.
 """
-import json, os, re, shutil, subprocess, sys, threading, webbrowser
+import json, os, re, shutil, signal, subprocess, sys, threading, webbrowser
 from datetime import date, datetime, timedelta
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -457,6 +457,30 @@ def find_zip(name, guest):
     return str(max(found, key=lambda f: f.stat().st_mtime)) if found else None
 
 
+def to_bin(path):
+    """Move a file or folder to the Bin, where Finder's Put Back can bring it back."""
+    if not path.exists():
+        return True
+    p = str(path).replace("\\", "\\\\").replace('"', '\\"')
+    try:
+        subprocess.run(["osascript", "-e", f'tell application "Finder" to delete (POSIX file "{p}" as alias)'],
+                       capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    if not path.exists():
+        return True
+    trash = Path.home() / ".Trash"  # Finder said no: move it there ourselves
+    trash.mkdir(exist_ok=True)
+    dest = trash / path.name
+    if dest.exists():
+        dest = trash / f"{path.name} {datetime.now():%H.%M.%S}"
+    try:
+        shutil.move(str(path), str(dest))
+        return True
+    except OSError:
+        return False
+
+
 def alive(pid):
     try:
         os.kill(pid, 0)
@@ -741,6 +765,29 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("tick every post as Posted on the calendar first")
             freed = tidy(name, st)
             return {"ok": True, "freed_mb": round(freed / 1e6)}
+        if path == "/api/cancel":  # stop the episode and put its working files in the Bin (the source video stays)
+            pid = st.get("pid")
+            if alive(pid):
+                os.kill(pid, signal.SIGTERM)
+            if name in jobs:
+                jobs[name].join(timeout=15)
+            if not to_bin(OUT / name):
+                raise ValueError("couldn't move its working files to the Bin: try Open folder and drag it there")
+            return {"ok": True}
+        if path == "/api/rebrand":  # another brand kit, without transcribing again
+            kit = b.get("kit") or ""
+            if not (KITS / kit / "kit.json").exists():
+                raise ValueError(f"can't find the brand kit {kit}")
+            if name in jobs:
+                raise ValueError("wait for this step to finish, then change the brand")
+            old, st["kit"] = st.get("kit") or DEFAULT_KIT, kit
+            if st.get("waiting") == "review":  # build the review again so its preview has the new logo and colours
+                st.update(step="review", status="queued", waiting=None)
+            save_state(name, st)
+            log(name, f"brand kit: {old} -> {kit}")
+            if st.get("status") == "queued":
+                start(name)
+            return {"ok": True, "remake": st.get("status") == "done"}
         if path == "/api/keep":  # changed their mind after Change and remake: keep what was made before
             if st.get("waiting") == "review" and (OUT / name / "kit" / "kit.html").exists():
                 st.update(step="done", status="done", waiting=None); save_state(name, st)

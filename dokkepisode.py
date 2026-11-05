@@ -445,6 +445,17 @@ def render_episode(name, brand):
     print(f"edited episode -> {out}")
 
 
+def framing(clip, shape, layout, speakers):
+    """How a clip sits in one shape: plan.json clip "frame" {shape: {"mode": "fill"|"fit"|"auto", "x": 0..1}},
+    chosen on the review page. Unset, a one-person clip fills the frame and a two-person one follows whoever's
+    talking. Returns the layout to render with and the fill position (None for the layout's own framing)."""
+    fr = (clip.get("frame") or {}).get(shape) or {}
+    mode = fr.get("mode") or ("fill" if speakers < 2 else "auto")
+    if layout == "speaker" and (speakers < 2 or mode != "auto"):
+        layout = "wide"  # following needs two people; fit and fill keep the picture still
+    return layout, ({"x": fr.get("x", 0.5)} if mode == "fill" else None)
+
+
 def render_clips(name, brand, only_id=None):
     wd = work_dir(name); cdir = wd / "clips"; work = wd / ".work"
     cdir.mkdir(parents=True, exist_ok=True); work.mkdir(parents=True, exist_ok=True)
@@ -502,10 +513,9 @@ def render_clips(name, brand, only_id=None):
                     ct.append({"s": a, "e": b, "spk": t["spk"]})
         (cdir / f"{stem}.turns.json").write_text(json.dumps(ct or [{"s": 0, "e": dur, "spk": 0}], indent=1))
         for shape, layout in brand["clips"]["formats"].items():
-            if layout == "speaker" and len({t["spk"] for t in ct}) < 2:
-                layout = "wide"
+            layout, frame = framing(clip, shape, layout, len({t["spk"] for t in ct}))
             dokkclip.render(src, cdir / f"{stem}.words.json", cdir / f"{stem}_{shape}.mp4", brand, work / "clip",
-                            layout, turns_json=cdir / f"{stem}.turns.json")
+                            layout, turns_json=cdir / f"{stem}.turns.json", frame=frame)
         print(f"clip {clip['id']} '{clip.get('title', '')}' ({dur:.0f}s) done")
 
 
