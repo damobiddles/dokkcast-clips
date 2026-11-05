@@ -477,6 +477,24 @@ def episodes(logs=True):
     return out
 
 
+SW = """// Offcuts, installed as an app: everything comes live from Offcuts on this Mac; when it isn't running,
+// say how to start it instead of the browser's own error page.
+self.addEventListener("install", e => self.skipWaiting());
+self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
+self.addEventListener("fetch", e => {
+  if (e.request.mode !== "navigate") return;
+  e.respondWith(fetch(e.request).catch(() => new Response(
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+     <title>Offcuts</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#0B0B0D;
+     color:#F2F1EE;font:16px system-ui;text-align:center"><div><h1 style="font-size:28px">Offcuts isn't running</h1>
+     <p style="color:#A3A4A9">Open Offcuts from the Dock or your Offcuts folder, then press Try again.</p>
+     <button onclick="location.reload()" style="font:inherit;padding:9px 18px;border-radius:8px;border:0;
+     background:#EDEBE6;color:#111214;font-weight:700;cursor:pointer">Try again</button></div>`,
+    { headers: { "Content-Type": "text/html; charset=utf-8" } })));
+});
+"""
+
+
 # ------------------------------------------------------------------- the server
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
@@ -549,6 +567,24 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/":
             html = (ROOT / "assets" / "app.html").read_text().replace("/*STUDIO*/null", json.dumps(studio()))
             return self.send(200, html.encode(), "text/html; charset=utf-8")
+        if u.path == "/manifest.webmanifest":  # so the browser can install Offcuts as an app with its own window
+            st = studio()
+            return self.send(200, json.dumps({
+                "name": st["name"], "short_name": st["name"], "description": st.get("tagline", ""),
+                "start_url": "/", "scope": "/", "display": "standalone", "id": "/",
+                "background_color": st.get("colors", {}).get("bg", "#0B0B0D"),
+                "theme_color": st.get("colors", {}).get("bg", "#0B0B0D"),
+                "icons": [{"src": f"/icon-{n}.png", "sizes": f"{n}x{n}", "type": "image/png", "purpose": "any"}
+                          for n in (192, 512)]}).encode(), "application/manifest+json")
+        m = re.fullmatch(r"/icon-(\d+)\.png", u.path)
+        if m and studio().get("icon") and int(m[1]) in (180, 192, 512):
+            from io import BytesIO
+            from PIL import Image
+            n, buf = int(m[1]), BytesIO()
+            Image.open(ROOT / studio()["icon"]).convert("RGBA").resize((n, n), Image.LANCZOS).save(buf, "PNG")
+            return self.send(200, buf.getvalue(), "image/png")
+        if u.path == "/sw.js":  # the installed app's helper: says so plainly when Offcuts isn't running
+            return self.send(200, SW.encode(), "text/javascript")
         if u.path == "/logo" and studio().get("logo"):
             f = ROOT / studio()["logo"]
             kind = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(f.suffix.lower())

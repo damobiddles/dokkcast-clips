@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Offcuts</title>
 <link rel="icon" href="/logo">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="theme-color" content="#0B0B0D">
+<meta name="apple-mobile-web-app-title" content="Offcuts">
 <style>
   :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --ok: #7be0a6; --warn: #ff8a8a; --wait: #ffd27a; --field: #0d1233; --button: #222a5c; --code: #070b22; --bw: 1px; --shadow: none; --radius: 10px; --scheme: dark; --head: inherit; --track: var(--line); }
   * { box-sizing: border-box; }
@@ -540,6 +544,7 @@ let kitFromNew = false;
 document.getElementById("kit-new").onclick = () => { kitFromNew = true; location.hash = "kits"; setTimeout(() => editKit(null), 50); };
 
 window.onhashchange = show;
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 show();
 refresh();
 loadCal();
