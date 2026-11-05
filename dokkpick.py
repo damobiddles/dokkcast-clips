@@ -19,11 +19,12 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
 
-from dokkclip import ROOT, load_brand
+from dokkclip import DEFAULT_KIT, ROOT, load_brand
 
 DEFAULTS = {"model": "claude-opus-5-5", "clips": 9, "min_seconds": 30, "max_seconds": 60,
             "host": "Dr. Nara Daubeney", "host_role": "Consultant ENT surgeon and entrepreneur",
-            "show": "The Dokkcast"}
+            "show": "The Dokkcast", "about": "a health podcast",
+            "notes": "No medical claims beyond what is said in the clip."}
 
 
 class Speaker(BaseModel):
@@ -103,11 +104,17 @@ def ask_claude_cli(text, schema):
     return answer[answer.find("{"):answer.rfind("}") + 1]  # the JSON, without any words around it
 
 
-def examples(name, limit=2):
-    """Copy from earlier episodes, newest first, as a style guide."""
+def kit_of(wd):
+    st = wd / "app.json"
+    return (json.loads(st.read_text()).get("kit") if st.exists() else None) or DEFAULT_KIT
+
+
+def examples(name, kit=DEFAULT_KIT, limit=2):
+    """Copy from earlier episodes of the same brand kit, newest first, as a style guide (so one client's
+    tone and hashtags never turn up in another's)."""
     out = []
     for cj in sorted((ROOT / "output").glob("*/copy.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        if cj.parent.name == name:
+        if cj.parent.name == name or kit_of(cj.parent) != kit:
             continue
         copy = json.loads(cj.read_text())
         first = next(iter(copy.values()), None)
@@ -122,8 +129,10 @@ def prompt(cfg, guest, role, transcript, styles):
     who = f"The guest is {guest}" + (f", {role}" if role else "") + "." if guest else \
         "Work out the guest's name and job from the conversation."
     style = ("\n\nCopy from earlier episodes, to match the tone and format:\n\n" + "\n\n".join(styles)) if styles else ""
-    return f"""This is the transcript of an episode of {cfg['show']}, a health podcast hosted by {cfg['host']} \
-({cfg['host_role']}). {who}
+    show = f"{cfg['show']}, {cfg['about']}" if cfg.get("about") else cfg["show"]
+    host = f" hosted by {cfg['host']}" + (f" ({cfg['host_role']})" if cfg.get("host_role") else "") if cfg.get("host") else ""
+    notes = f" {cfg['notes']}" if cfg.get("notes") else ""
+    return f"""This is the transcript of an episode of {show}{host}. {who}
 
 Each line is [number of its first word] mm:ss S<speaker>: text. Words are numbered one by one from the line's number.
 
@@ -133,9 +142,9 @@ claim, a question people ask), lands one clear idea, and ends on a complete sent
 include the host's question only if the answer needs it. No two clips may overlap. Give each clip by the numbers of \
 its first and last words.
 
-Then write the copy for each clip. Keep it accurate to what was said: no medical claims beyond the clip, no \
+Then write the copy for each clip. Keep it accurate to what was said: no claims beyond the clip, no \
 promises, and spell names and terms correctly (the transcript is automatic and may mishear them). British English. \
-Name the guest with their title. Captions should make people want to watch, then follow the episode.{style}
+Name the guest with their title. Captions should make people want to watch, then follow the episode.{notes}{style}
 
 Transcript:
 
@@ -154,13 +163,15 @@ def main():
     p.add_argument("--claude", action="store_true",
                    help="no API: ask Claude Code on this Mac, signed in with your Claude account")
     a = p.parse_args()
-    cfg = dict(DEFAULTS, **load_brand(a.brand).get("pick", {}))
+    brand = load_brand(a.brand, a.name)
+    cfg = dict(DEFAULTS, **brand.get("pick", {}))
     wd = ROOT / "output" / a.name
+    kit = brand.get("kit", DEFAULT_KIT)
     transcript = (wd / "transcript.txt").read_text()
     words = json.loads((wd / "words.json").read_text())
     if a.prompt or a.claude:
         schema = json.dumps(strict(Picks.model_json_schema()), indent=1)
-        request = prompt(cfg, a.guest, a.role, transcript, examples(a.name)) + \
+        request = prompt(cfg, a.guest, a.role, transcript, examples(a.name, kit)) + \
             f"\n\nAnswer with JSON only, matching this schema:\n{schema}\n"
         (wd / "pick-prompt.txt").write_text(request)
         if a.prompt:
@@ -197,7 +208,7 @@ def main():
         with client.messages.stream(
                 model=cfg["model"], max_tokens=64000, output_config={"effort": "high", "format": {
                     "type": "json_schema", "schema": strict(Picks.model_json_schema())}},
-                messages=[{"role": "user", "content": prompt(cfg, a.guest, a.role, transcript, examples(a.name))}]) as stream:
+                messages=[{"role": "user", "content": prompt(cfg, a.guest, a.role, transcript, examples(a.name, kit))}]) as stream:
             r = stream.get_final_message()
     except anthropic.AuthenticationError:
         sys.exit("the Anthropic API key was refused: check it at console.anthropic.com")
@@ -235,8 +246,8 @@ def save(a, cfg, wd, words, picks):
         sys.exit("no usable clips came back; run it again")
 
     host = cfg["host"]
-    speakers = {str(s.speaker): {"name": host if s.role.lower() == "host" else (a.guest or s.name),
-                                 "role": cfg["host_role"] if s.role.lower() == "host" else (a.role or s.role)}
+    speakers = {str(s.speaker): {"name": (host or s.name) if s.role.lower() == "host" else (a.guest or s.name),
+                                 "role": (cfg["host_role"] or "Host") if s.role.lower() == "host" else (a.role or s.role)}
                 for s in picks.speakers}
     sug = wd / "suggestions.json"
     sug.write_text(json.dumps({"speakers": speakers, "clips": clips}, indent=1, ensure_ascii=False))

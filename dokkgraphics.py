@@ -86,6 +86,8 @@ def graphic(brand, shape, photo, focus, logo, kicker, title, name, role, out):
         tf, kf = font(800, size), font(800, max(30, round(size * 0.3)))
         lines = wrap(title, tf, tw)
         nf, rf = font(800, round(size * 0.42)), font(700, round(size * 0.34))
+        while role and rf.size > 18 and rf.getlength(role) > tw:  # a long job title gets smaller, not cut off
+            rf = font(700, rf.size - 2)
         th = len(lines) * size * 1.08 + size * 0.9 + nf.size * 1.3 + rf.size * 1.3 + kf.size * 1.8
         if (len(lines) <= 4 and th <= y1 - y0) or size <= 48:
             break
@@ -103,9 +105,10 @@ def graphic(brand, shape, photo, focus, logo, kicker, title, name, role, out):
     y += nf.size * 1.3
     if role:
         d.text((x0, y), role, font=rf, fill=hi)
-    lx, ly, lw = L["logo"]
-    lg = logo.resize((lw, round(logo.height * lw / logo.width)), Image.LANCZOS)
-    img.paste(lg, (lx, ly), lg)
+    if logo:
+        lx, ly, lw = L["logo"]
+        lg = logo.resize((lw, round(logo.height * lw / logo.width)), Image.LANCZOS)
+        img.paste(lg, (lx, ly), lg)
     img.save(out)
 
 
@@ -119,7 +122,7 @@ def main():
     p.add_argument("--brand", default=str(ROOT / "brand.json"))
     a = p.parse_args()
     from PIL import Image
-    brand = load_brand(a.brand)
+    brand = load_brand(a.brand, a.name)
     wd = ROOT / "output" / a.name
     plan = json.loads((wd / "plan.json").read_text())
     who = plan["speakers"].get(a.guest, {})
@@ -127,11 +130,10 @@ def main():
     focus = tuple(float(v) for v in a.focus.split(","))
     with tempfile.TemporaryDirectory() as tmp:
         lb = dict(brand, logo=dict(brand["logo"], width=900))
-        make_logo(lb, Path(tmp) / "logo.png")
-        logo = Image.open(Path(tmp) / "logo.png").convert("RGBA")
+        logo = Image.open(Path(tmp) / "logo.png").convert("RGBA") if make_logo(lb, Path(tmp) / "logo.png") else None
     out = wd / "graphics"; out.mkdir(exist_ok=True)
     jobs = [(f"{a.name}_episode", "New episode", a.title)] if a.title else []
-    jobs += [(f"{a.name}_clip{c['id']}", "The Dokkcast", c["title"]) for c in plan.get("clips", []) if not c.get("skip")]
+    jobs += [(f"{a.name}_clip{c['id']}", brand.get("show", {}).get("kicker", "The Dokkcast"), c["title"]) for c in plan.get("clips", []) if not c.get("skip")]
     for stem, kicker, title in jobs:
         for shape in SHAPES:
             graphic(brand, shape, photo, focus, logo, kicker, title, who.get("name", ""), who.get("role", ""),

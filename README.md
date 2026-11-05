@@ -118,12 +118,28 @@ On the Mac the app lives in one folder, ~/Offcuts:
 
     Source files/      new episode videos and music go here (Choose… opens here)
     Ready to post/     one zip per finished episode: clips, covers and captions
+    Brand kits/        one folder per client or show: kit.json and its logo
     Working files/     each episode's workings (transcripts, clips, kit); the app looks after it
     App/               this repository, with its .venv and models (output/ links to ../Working files)
     Where things are.txt
 
 `dokkclip.py` works this out from the repository's folder being called `App`; anywhere else, videos
 and zips stay in ~/Movies/Dokkcast as before.
+
+### Brand kits
+
+Each episode is made with a brand kit, picked on New episode (made and edited under Brand kits in the
+app). A kit is a folder with `kit.json` and a logo (SVG, PNG or JPEG):
+
+    {"show": "The Acme Show", "logo": "logo.png",
+     "colors": {"top": "#101010", "bottom": "#303030", "highlight": "#00FF88"},
+     "host": "", "host_role": "", "about": "a podcast about small business", "notes": "", "spellings": {}}
+
+It goes on top of brand.json: the background bands and caption highlight on the clips, the logo (none if
+the kit has none), the show name on the covers and in the zip name, and the show and host Claude is told
+about when it picks the clips (with style examples only from the same kit's episodes). The app passes the
+kit to every tool in `OFFCUTS_KIT`; run by hand, a tool uses the kit in the episode's app.json.
+Episodes from before kits use "The Dokkcast".
 
 ### One episode, start to finish
 

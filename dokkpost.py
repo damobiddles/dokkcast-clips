@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dokkcast social posting: approve clips and copy, then schedule them through Postiz.
+"""Social posting: approve clips and copy, then schedule them through Postiz.
 
     python dokkpost.py plan Marcela                 # posts.json from the clips + copy.json, one clip per weekday
     python dokkpost.py plan Marcela --start 2026-11-02 --time 12:00 --days mon,wed,fri
@@ -262,7 +262,7 @@ def kit(name, brand):
           f" -> {out}\nopen {out / 'kit.html'} in a browser")
 
 
-def make_zip(name, title=None):
+def make_zip(name, title=None, brand=None):
     """The kit as one zip for Slack, with real files (not links) inside."""
     wd = work_dir(name)
     if not (wd / "kit" / "kit.html").exists():
@@ -273,7 +273,7 @@ def make_zip(name, title=None):
         title = re.sub(r"^(Dr|Prof|Professor|Mr|Mrs|Ms|Miss)\.?\s+", "", guest)
     out = READY if READY.is_dir() or STUDIO else wd  # Ready to post (or ~/Movies/Dokkcast); next to the kit otherwise
     out.mkdir(parents=True, exist_ok=True)
-    z = out / f"Dokkcast posts - {title}.zip"
+    z = out / f"{((brand or {}).get('show') or {}).get('zip', 'Dokkcast posts')} - {title}.zip"
     z.unlink(missing_ok=True)
     if shutil.which("ditto"):
         subprocess.run(["ditto", "-c", "-k", "--keepParent", str(wd / "kit"), str(z)], check=True)
@@ -293,11 +293,12 @@ def finish(name, brand, music=None, title=None):
         # the covers name the guest: whichever speaker isn't the host (the speaker numbers vary by episode)
         host = brand.get("pick", {}).get("host", "Dr. Nara Daubeney")
         speakers = load_plan(wd).get("speakers", {})
-        guest = next((k for k, v in speakers.items() if v.get("name") != host), None)
+        guest = next((k for k, v in speakers.items()
+                      if v.get("name") != host and v.get("role", "").lower() != "host"), None)
         if subprocess.run([sys.executable, str(g), name] + (["--guest", guest] if guest else [])).returncode:
             print("graphics failed; carrying on without covers")
     kit(name, brand)
-    make_zip(name, title)
+    make_zip(name, title, brand)
 
 
 # -------------------------------------------------------------------- schedule
@@ -369,7 +370,7 @@ def main():
     p.add_argument("--go", action="store_true", help="schedule: really upload and schedule")
     p.add_argument("--brand", default=str(ROOT / "brand.json"))
     a = p.parse_args()
-    brand = load_brand(a.brand)
+    brand = load_brand(a.brand, a.target and Path(a.target).stem)
     if a.command != "channels" and not a.target:
         p.error("give the episode name")
     name = a.target and Path(a.target).stem
@@ -382,7 +383,7 @@ def main():
     elif a.command == "kit":
         kit(name, brand)
     elif a.command == "zip":
-        make_zip(name, a.title)
+        make_zip(name, a.title, brand)
     elif a.command == "move-off":  # e.g. posts planned over Christmas
         move_off(name, brand)
     elif a.command == "finish":

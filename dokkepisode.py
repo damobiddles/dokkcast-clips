@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Dokkcast episode edit: a light edit of a full episode plus branded clips.
+"""Episode edit: a light edit of a full episode plus branded clips.
 
     python dokkepisode.py prep ~/Videos/ep12.mp4     # transcript + suggested cuts -> output/ep12/
     python dokkepisode.py review ep12               # writes output/ep12/review.html to check suggestions
@@ -515,7 +515,7 @@ def main():
     p.add_argument("--speakers", type=int, default=2, help="prep: how many people talk in the episode")
     p.add_argument("--brand", default=str(ROOT / "brand.json"))
     a = p.parse_args()
-    brand = load_brand(a.brand)
+    brand = load_brand(a.brand, Path(a.target).stem)
     if not shutil.which("ffmpeg"):
         sys.exit("ffmpeg not found: run ./setup.sh first")
     if a.command == "prep":

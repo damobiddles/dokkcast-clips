@@ -23,13 +23,14 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
-from dokkclip import READY, ROOT, STUDIO, VIDEOS, day_off
+from dokkclip import DEFAULT_KIT, KITS, READY, ROOT, STUDIO, VIDEOS, day_off, read_kit
 
 OUT = ROOT / "output"  # in the app, a link to <Offcuts>/Working files
 PY = sys.executable
 PORT = int(os.environ.get("DOKK_PORT", 8765))
 STEPS = ["prep", "pick", "review", "finish"]
 jobs = {}  # name -> running thread
+chosen = set()  # logos chosen in this run of the app, which the brand kit form may show before saving
 
 
 def studio():
@@ -61,7 +62,8 @@ def run(name, cmd):
     """Run one tool command, streaming its output into the episode's log."""
     log(name, f"\n$ {' '.join(map(str, cmd[1:]))}")
     with open(OUT / name / "app.log", "a") as f:
-        r = subprocess.Popen(list(map(str, cmd)), cwd=ROOT, stdout=f, stderr=subprocess.STDOUT)
+        env = dict(os.environ, OFFCUTS_KIT=(load_state(name) or {}).get("kit") or DEFAULT_KIT)  # the client's branding
+        r = subprocess.Popen(list(map(str, cmd)), cwd=ROOT, stdout=f, stderr=subprocess.STDOUT, env=env)
         st = load_state(name); st["pid"] = r.pid; save_state(name, st)  # so a restarted app waits for it
         r.wait()
     st = load_state(name); st.pop("pid", None); save_state(name, st)
@@ -81,10 +83,12 @@ def notify(text):
 
 
 def choose(kind):
-    types = {"video": '{"public.movie"}', "music": '{"public.audio"}', "photo": '{"public.image"}'}
+    types = {"video": '{"public.movie"}', "music": '{"public.audio"}', "photo": '{"public.image"}',
+             "logo": '{"public.image", "public.svg-image"}'}
     prompts = {"video": "Choose the episode video", "music": "Choose the music track",
-               "photo": "Choose a photo of the guest (for the covers)"}
-    where = f' default location (POSIX file "{VIDEOS}")' if kind != "photo" and VIDEOS.is_dir() else ""
+               "photo": "Choose a photo of the guest (for the covers)",
+               "logo": "Choose the logo (SVG or PNG, ideally one made for dark backgrounds)"}
+    where = f' default location (POSIX file "{VIDEOS}")' if kind in ("video", "music") and VIDEOS.is_dir() else ""
     return mac(f'POSIX path of (choose file with prompt "{prompts[kind]}" of type {types[kind]}{where})')
 
 
@@ -306,13 +310,85 @@ def calendar():
     return sorted(out, key=lambda p: p["when"])
 
 
+# ------------------------------------------------------------------ brand kits
+KIT_FIELDS = ("show", "host", "host_role", "about", "notes")
+SEED = {  # made once, on first start; after that they're the person's to change
+    "The Dokkcast": {"show": "The Dokkcast", "host": "Dr. Nara Daubeney", "host_role": "Consultant ENT surgeon and entrepreneur",
+                     "about": "a health podcast", "notes": "No medical claims beyond what is said in the clip.",
+                     "zip": "Dokkcast posts", "colors": {"top": "#0A0F2C", "bottom": "#251A63", "highlight": "#75C0FB"},
+                     "logo_from": "assets/logo/udokk_logo_gradient.svg"},
+    "MBMS Podcast Studio": {"show": "MBMS Podcast Studio", "host": "", "host_role": "", "about": "a podcast", "notes": "",
+                            "colors": {"top": "#17161C", "bottom": "#2A2830", "highlight": "#FF5A36"},
+                            "logo_from": "assets/studio/mbms-logo-for-dark-backgrounds.svg"},
+}
+
+
+def seed_kits():
+    if KITS.exists():
+        return
+    for name, k in SEED.items():
+        d = KITS / name
+        d.mkdir(parents=True, exist_ok=True)
+        k = dict(k)
+        src = ROOT / k.pop("logo_from", "")
+        if src.is_file():
+            shutil.copy(src, d / f"logo{src.suffix}")
+            k["logo"] = f"logo{src.suffix}"
+        (d / "kit.json").write_text(json.dumps(k, indent=1, ensure_ascii=False))
+
+
+def kits():
+    out = []
+    for d in sorted(KITS.glob("*/kit.json")) if KITS.is_dir() else []:
+        try:
+            k = read_kit(d.parent)
+        except ValueError:
+            continue
+        k["logo_url"] = f"/kit-logo/{quote(k['name'])}" if k.get("logo") and (d.parent / k["logo"]).is_file() else None
+        out.append(k)
+    return out
+
+
+def save_kit(b):
+    """A brand kit from the form: the folder is named after the client, the logo is copied into it."""
+    name = re.sub(r"[^\w\-&' .]", "", b.get("name", "")).strip(" .")
+    if not name:
+        raise ValueError("give the brand kit a name, e.g. the client or show")
+    d = KITS / name
+    if b.get("new") and d.exists():
+        raise ValueError(f"there's already a brand kit called {name}")
+    k = read_kit(d) if (d / "kit.json").exists() else {}
+    k.pop("name", None)
+    for f in KIT_FIELDS:
+        if f in b:
+            k[f] = str(b[f]).strip()
+    colors = b.get("colors") or {}
+    k["colors"] = {c: v for c, v in dict(k.get("colors", {}), **colors).items() if re.fullmatch(r"#[0-9A-Fa-f]{6}", v or "")}
+    d.mkdir(parents=True, exist_ok=True)
+    if b.get("logo"):  # a newly chosen logo file
+        src = Path(b["logo"]).expanduser()
+        if src.suffix.lower() not in (".svg", ".png", ".jpg", ".jpeg"):
+            raise ValueError("the logo needs to be an SVG, PNG or JPEG")
+        readable(src, "logo")
+        for old in d.glob("logo.*"):
+            old.unlink()
+        shutil.copy(src, d / f"logo{src.suffix.lower()}")
+        k["logo"] = f"logo{src.suffix.lower()}"
+    elif b.get("no_logo"):
+        for old in d.glob("logo.*"):
+            old.unlink()
+        k.pop("logo", None)
+    (d / "kit.json").write_text(json.dumps(k, indent=1, ensure_ascii=False))
+    return {"name": name}
+
+
 def find_zip(name, guest):
     """This episode's zip, wherever it was left: Ready to post, Movies/Dokkcast, the Desktop or the episode folder."""
     surname = (guest or name).split()[-1].lower()  # the zip may use a shorter name, e.g. Jess for Jessica
     found = []
     for d in (READY, Path.home() / "Movies" / "Dokkcast", Path.home() / "Desktop", OUT / name):
         try:  # macOS may not let the app look in the Desktop
-            found += [f for f in os.scandir(d) if f.name.startswith("Dokkcast posts - ") and f.name.endswith(".zip")
+            found += [f for f in os.scandir(d) if " posts - " in f.name and f.name.endswith(".zip")
                       and surname in f.name.lower() and "before" not in f.name.lower()]
         except OSError:
             continue
@@ -357,6 +433,7 @@ def episodes(logs=True):
         st["review_url"] = page(st["name"], "posts.html")
         st["has_kit"] = (p.parent / "kit" / "kit.html").exists()
         st["kit_url"] = page(st["name"], "kit/kit.html")
+        st["kit"] = st.get("kit") or DEFAULT_KIT
         out.append(st)
     return out
 
@@ -426,6 +503,8 @@ class Handler(BaseHTTPRequestHandler):
             f = Path(unquote(u.path[6:]))
             allowed = {Path(v).resolve() for st in map(load_state, [p.parent.name for p in OUT.glob("*/app.json")])
                        for v in (st.get("video"), st.get("music")) if v}
+            if f.is_file() and str(f.resolve()) in chosen:
+                return self.send_file(f)
             if f.is_file() and (f.resolve() in allowed or f.resolve().is_relative_to(OUT.resolve())):
                 return self.send_file(f)
         if u.path == "/":
@@ -436,6 +515,12 @@ class Handler(BaseHTTPRequestHandler):
             kind = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(f.suffix.lower())
             if f.exists() and kind:
                 return self.send(200, f.read_bytes(), kind)
+        if u.path.startswith("/kit-logo/"):
+            k = next((k for k in kits() if k["name"] == unquote(u.path[10:])), None)
+            if k and k.get("logo"):
+                return self.send_file(KITS / k["name"] / k["logo"])
+        if u.path == "/api/kits":
+            return self.send(200, {"kits": kits(), "last": settings().get("kit") or DEFAULT_KIT})
         if u.path == "/api/calendar":
             return self.send(200, {"posts": calendar(), "upload": UPLOAD})
         if u.path == "/api/state":
@@ -456,7 +541,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def action(self, path, b):
         if path == "/api/choose":
-            return {"path": choose(b["kind"])}
+            p = choose(b["kind"])
+            if p and b["kind"] == "logo":
+                chosen.add(str(Path(p).resolve()))
+            return {"path": p}
         if path == "/api/mode":
             p = Path.home() / ".dokkcast" / "settings.json"
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -477,7 +565,12 @@ class Handler(BaseHTTPRequestHandler):
             p.write_text(b["key"].strip())
             p.chmod(0o600)
             return {"ok": True}
+        if path == "/api/kit":
+            return save_kit(b)
         if path == "/api/new":
+            kit = b.get("kit") or DEFAULT_KIT
+            if not (KITS / kit / "kit.json").exists():
+                raise ValueError(f"can't find the brand kit {kit}: choose another")
             video = Path(b["video"]).expanduser()
             if not video.exists():
                 raise ValueError("can't find that video")
@@ -489,7 +582,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError(f"there's already an episode called {name}")
             st = {"video": str(video), "music": b.get("music") or None, "guest": b.get("guest", "").strip(),
                   "role": b.get("role", "").strip(), "start": b.get("start") or None, "photo": b.get("photo") or None,
-                  "speakers": int(b.get("speakers") or 2), "step": "prep", "status": "queued",
+                  "speakers": int(b.get("speakers") or 2), "step": "prep", "status": "queued", "kit": kit,
                   "created": datetime.now().isoformat(timespec="seconds")}
             if video.stem != name:  # prep names the work folder after the file
                 link = VIDEOS / f"{name}{video.suffix}"
@@ -498,6 +591,9 @@ class Handler(BaseHTTPRequestHandler):
                     link.symlink_to(video)
                 st["video"] = str(link)
             save_state(name, st)
+            p = Path.home() / ".dokkcast" / "settings.json"  # the next episode starts with the same kit
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(json.dumps(dict(settings(), kit=kit)))
             warning = None
             try:
                 keep_photo(name, st["photo"])
@@ -575,6 +671,7 @@ def main():
     if not shutil.which("ffmpeg"):
         sys.exit("ffmpeg not found: run ./setup.sh first")
     OUT.mkdir(exist_ok=True)
+    seed_kits()  # the brand kits to start with: The Dokkcast and MBMS Podcast Studio
     if STUDIO:  # the folders a person uses, and a note on what each is for
         if (STUDIO / "Videos").is_dir() and not VIDEOS.exists():  # its first name
             (STUDIO / "Videos").rename(VIDEOS)
@@ -583,6 +680,7 @@ def main():
             "Offcuts\n\n"
             "Source files     Put each new episode video and its music track here, then choose them in Offcuts.\n"
             "Ready to post    One zip per finished episode: the clips, covers and captions to share or post from.\n"
+            "Brand kits       One folder per client or show: its logo and colours, made in Offcuts (Brand kits).\n"
             "Working files    Offcuts' own workings (transcripts, clips, covers). No need to open it.\n"
             "App              The program itself. Leave it be.\n\n"
             "Day to day, open Offcuts: the Calendar shows each day's posts, ready to copy and drag in.\n")
