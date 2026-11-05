@@ -2,8 +2,8 @@
   "studio": {
     "name": "Offcuts",
     "tagline": "by MBMS Podcast Studio · one episode in, a month of marketing out",
-    "logo": "",
-    "icon": "assets/studio/mbms-icon-1024.png",
+    "logo": "assets/brand/offcuts-icon.svg",
+    "icon": "assets/brand/offcuts-icon.png",
     "fonts_css": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap",
     "font": "Inter, system-ui, sans-serif",
     "headline_font": "Poppins, Inter, sans-serif",
