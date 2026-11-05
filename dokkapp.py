@@ -200,6 +200,28 @@ def newest_saved(name):
     return None
 
 
+def refind_video(name, st):
+    """The episode video, moved into Source files (or anywhere in it) since the episode started: point the
+    episode and its plan at the new place, so the review and the renders find it."""
+    v = Path(st.get("video") or "")
+    pj = OUT / name / "plan.json"
+    plan = json.loads(pj.read_text()) if pj.exists() else {}
+    want = [Path(p).name for p in (plan.get("video"), str(v)) if p]
+    if v.exists() and (not plan.get("video") or Path(plan["video"]).exists()):
+        return
+    found = next((f for n in want for f in VIDEOS.rglob(n) if f.is_file() and not f.is_symlink()), None) \
+        if VIDEOS.is_dir() else None
+    if not found:
+        return
+    if not v.exists():
+        if v.is_symlink() and v.parent == VIDEOS:
+            v.unlink()  # the old link into the folder it came from
+        st["video"] = str(found); save_state(name, st)
+    if plan.get("video") and not Path(plan["video"]).exists():
+        plan["video"] = str(found.resolve()); pj.write_text(json.dumps(plan, indent=1))
+    log(name, f"found the video in Source files: {found.name}")
+
+
 def keep_photo(name, path):
     """Copy the guest photo into the episode folder straight away: one dragged from Photos is a
     temporary file that macOS soon deletes."""
@@ -227,6 +249,7 @@ def advance(name):
         if st.get("music") and not Path(st["music"]).exists() and (VIDEOS / Path(st["music"]).name).exists():
             st["music"] = str(VIDEOS / Path(st["music"]).name)  # moved into Source files since
             save_state(name, st)
+        refind_video(name, st)
         if st.get("photo") and not (OUT / name / "photo.jpg").exists():
             try:
                 keep_photo(name, st["photo"])
@@ -767,6 +790,11 @@ def main():
             "App              The program itself. Leave it be.\n\n"
             "Day to day, open Offcuts: the Calendar shows each day's posts, ready to copy and drag in.\n")
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    for name in [p.parent.name for p in OUT.glob("*/app.json")]:  # videos moved into Source files since
+        try:
+            refind_video(name, load_state(name))
+        except Exception:
+            pass
     for name in [p.parent.name for p in OUT.glob("*/app.json")]:  # carry on with anything that was running
         if load_state(name).get("status") in ("running", "queued"):
             start(name)
