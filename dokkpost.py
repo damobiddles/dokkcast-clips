@@ -8,6 +8,7 @@
     python dokkpost.py apply Marcela ~/Downloads/posts.json   # take the choices saved from posts.html
     python dokkpost.py kit Marcela                  # posting kit to upload by hand: output/Marcela/kit/
     python dokkpost.py zip Marcela                  # the kit as Dokkcast posts - <guest>.zip in Ready to post
+    python dokkpost.py move-off Marcela             # move posts off days off (brand.json social "off", e.g. Christmas)
     python dokkpost.py finish Marcela --music ~/Movies/Dokkcast/track.wav   # render approved clips, graphics, kit, zip
     python dokkpost.py channels                     # check the Postiz login and list connected accounts
     python dokkpost.py schedule Marcela             # dry run: what would go out, and each channel's rules
@@ -39,7 +40,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from dokkclip import READY, ROOT, STUDIO, load_brand
+from dokkclip import READY, ROOT, STUDIO, day_off, load_brand
 from dokkepisode import load_plan
 
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -76,7 +77,7 @@ def plan(name, brand, start=None, at=None, days=None):
     old = {p["clip"]: p for p in json.loads((wd / "posts.json").read_text())["posts"]} if (wd / "posts.json").exists() else {}
     posts = []
     for c in clips:
-        while d.weekday() not in days:
+        while d.weekday() not in days or day_off(d, social):  # posting days only, none over Christmas
             d += timedelta(days=1)
         cp = copy.get(str(c["id"]), {})
         text = {p: cp.get(p) or c.get("title", "") for p in social["platforms"]}
@@ -188,6 +189,32 @@ def apply(name, brand, path):
     pj.write_text(json.dumps(ep, indent=1))
     print(f"{len(ok)} of {len(cur['posts'])} posts approved: clips {', '.join(str(p['clip']) for p in ok) or 'none'}")
     review(name, brand)
+
+
+def move_off(name, brand):
+    """Move posts that fall on a day off (brand.json social "off") to the next free posting days after
+    it, keeping one post a day across all episodes. Then remake the kit, as its folders carry the dates."""
+    wd, social = work_dir(name), brand["social"]
+    days = [DAYS.index(d.strip()[:3].lower()) for d in social["days"].split(",")]
+    data = json.loads((wd / "posts.json").read_text())
+    taken = {p["when"][:10] for pj in (ROOT / "output").glob("*/posts.json") for p in json.loads(pj.read_text())["posts"]}
+    moved = 0
+    for p in sorted(data["posts"], key=lambda p: p["when"]):
+        d = date.fromisoformat(p["when"][:10])
+        if not day_off(d, social):
+            continue
+        while d.weekday() not in days or day_off(d, social) or d.isoformat() in taken:
+            d += timedelta(days=1)
+        print(f"clip {p['clip']}: {p['when'][:10]} -> {d}")
+        taken.add(d.isoformat())
+        p["when"] = d.isoformat() + p["when"][10:]
+        moved += 1
+    if not moved:
+        print("no posts on days off")
+        return
+    (wd / "posts.json").write_text(json.dumps(data, indent=1))
+    if (wd / "kit").is_dir():
+        kit(name, brand)
 
 
 # ------------------------------------------------------------------------- kit
@@ -331,7 +358,7 @@ def schedule(name, brand, go=False):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["plan", "review", "apply", "kit", "zip", "finish", "channels", "schedule"])
+    p.add_argument("command", choices=["plan", "review", "apply", "kit", "zip", "finish", "channels", "schedule", "move-off"])
     p.add_argument("target", nargs="?", help="the episode name (as in output/<name>)")
     p.add_argument("file", nargs="?", help="apply: posts.json saved from posts.html")
     p.add_argument("--start", help="plan: first posting day, YYYY-MM-DD (default tomorrow)")
@@ -356,6 +383,8 @@ def main():
         kit(name, brand)
     elif a.command == "zip":
         make_zip(name, a.title)
+    elif a.command == "move-off":  # e.g. posts planned over Christmas
+        move_off(name, brand)
     elif a.command == "finish":
         finish(name, brand, a.music, a.title)
     elif a.command == "channels":

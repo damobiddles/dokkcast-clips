@@ -178,7 +178,7 @@
     },
     "tz": "Europe/London",
     "time": "12:00",
-    "days": "mon,tue,wed,thu,fri",
+    "days": "mon,tue,wed,thu,fri", "off": [["12-24", "01-01"]],
     "channels": {},
     "settings": {
       "tiktok": {

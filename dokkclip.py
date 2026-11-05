@@ -41,6 +41,13 @@ def load_brand(path):
     return json.loads(Path(path).read_text())
 
 
+def day_off(d, social):
+    """True for a date in one of brand.json social "off" periods, e.g. ["12-24", "01-01"] for Christmas
+    to New Year, every year (a period may run over the year's end)."""
+    md = d.strftime("%m-%d")
+    return any((a <= md <= b) if a <= b else (md >= a or md <= b) for a, b in social.get("off", []))
+
+
 # ------------------------------------------------------------------ transcribe
 def load_audio(video):
     import numpy as np

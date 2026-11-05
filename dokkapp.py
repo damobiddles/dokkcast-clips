@@ -23,7 +23,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
-from dokkclip import READY, ROOT, STUDIO, VIDEOS
+from dokkclip import READY, ROOT, STUDIO, VIDEOS, day_off
 
 OUT = ROOT / "output"  # in the app, a link to <Offcuts>/Working files
 PY = sys.executable
@@ -98,7 +98,8 @@ def next_start():
             except (KeyError, ValueError):
                 pass
     d = last + timedelta(days=1)
-    while d.weekday() > 4:
+    social = json.loads((ROOT / "brand.json").read_text())["social"]
+    while d.weekday() > 4 or day_off(d, social):
         d += timedelta(days=1)
     return d.isoformat()
 
