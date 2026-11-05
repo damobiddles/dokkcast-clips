@@ -400,12 +400,12 @@ class Handler(BaseHTTPRequestHandler):
                 fh.seek(start)
                 left = end - start + 1
                 while left > 0:
-                    chunk = fh.read(min(1 << 20, left))
+                    chunk = fh.read(min(1 << 18, left))
                     if not chunk:
                         break
                     self.wfile.write(chunk)
                     left -= len(chunk)
-        except (BrokenPipeError, ConnectionResetError):  # the player stopped reading, as it does when seeking
+        except OSError:  # the player stopped reading, as it does when seeking
             pass
 
     def do_GET(self):
@@ -500,6 +500,9 @@ class Handler(BaseHTTPRequestHandler):
                 st["photo"] = None; save_state(name, st); warning = str(e)
             start(name)
             return {"name": name, "warning": warning}
+        if path == "/api/home":  # the Offcuts folder, with Videos and Ready to post
+            subprocess.run(["open", str(STUDIO or ROOT)])
+            return {"ok": True}
         name = b.get("name", "")
         st = load_state(name)
         if not st:
@@ -546,9 +549,6 @@ class Handler(BaseHTTPRequestHandler):
                 if k in b:
                     st[k] = b[k]
             save_state(name, st)
-            return {"ok": True}
-        if path == "/api/home":  # the Offcuts folder, with Videos and Ready to post
-            subprocess.run(["open", str(STUDIO or ROOT)])
             return {"ok": True}
         if path == "/api/open":
             what = {"review": OUT / name / "posts.html", "kit": OUT / name / "kit" / "kit.html",
