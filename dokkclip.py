@@ -1,19 +1,37 @@
 #!/usr/bin/env python3
-"""Dokkcast clip branding: transcribe a clip, then render it with the udokk logo,
-a branded background and word-highlighted Manrope captions.
+"""Clip branding: transcribe a clip, then render it with a show's logo, a branded
+background and word-highlighted Manrope captions.
 
     python dokkclip.py all input/clip.mp4            # transcribe + render
     python dokkclip.py transcribe input/clip.mp4     # writes output/clip.words.json
     python dokkclip.py render input/clip.mp4         # uses output/clip.words.json
     python dokkclip.py render input/clip.mp4 --layout speaker   # follows whoever is talking
 
-Branding lives in brand.json. Words can come from any source: render only needs
+Branding lives in brand.json, and a brand kit (a folder in Brand kits) swaps in a client's
+logo, colours, show and host. Words can come from any source: render only needs
 a JSON list of {"w": "word", "s": start_seconds, "e": end_seconds}.
 """
-import argparse, difflib, io, json, re, subprocess, sys, wave
+import argparse, difflib, io, json, os, re, subprocess, sys, wave
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+# Set up as the Offcuts app, the program sits in <Offcuts>/App with everything a person uses beside it:
+# Source files (episode videos and music go in), Ready to post (a zip per episode comes out) and Working files.
+STUDIO = ROOT.parent if ROOT.name == "App" else None
+VIDEOS = STUDIO / "Source files" if STUDIO else Path("~/Movies/Dokkcast").expanduser()
+READY = STUDIO / "Ready to post" if STUDIO else Path("~/Movies/Dokkcast").expanduser()
+KITS = STUDIO / "Brand kits" if STUDIO else ROOT / "brand-kits"  # one folder per client: kit.json and a logo
+DEFAULT_KIT = "The Dokkcast"
+FILL_LOGO = {"scale": 0.55, "margin": 60}  # a filled frame's logo: this much smaller, in the top left corner  # episodes from before brand kits
+# Homebrew's ffmpeg-full has libass for captions and is not on PATH by default
+for _d in ("/opt/homebrew/opt/ffmpeg-full/bin", "/usr/local/opt/ffmpeg-full/bin"):
+    if Path(_d).is_dir():
+        os.environ["PATH"] = _d + os.pathsep + os.environ["PATH"]
+        break
+# cairosvg looks up libcairo via ctypes, which doesn't search Homebrew's lib folder on Apple Silicon
+if Path("/opt/homebrew/lib").is_dir():
+    os.environ["DYLD_FALLBACK_LIBRARY_PATH"] = os.pathsep.join(
+        filter(None, [os.environ.get("DYLD_FALLBACK_LIBRARY_PATH"), "/opt/homebrew/lib", "/usr/local/lib", "/usr/lib"]))
 
 
 def sh(cmd, **kw):
@@ -23,8 +41,58 @@ def sh(cmd, **kw):
     return r
 
 
-def load_brand(path):
-    return json.loads(Path(path).read_text())
+def load_brand(path, name=None):
+    """brand.json, with a brand kit on top: the one in OFFCUTS_KIT (the app sets it), else the one the
+    episode was made with (output/<name>/app.json "kit")."""
+    brand = json.loads(Path(path).read_text())
+    kit = os.environ.get("OFFCUTS_KIT")
+    if not kit and name and (ROOT / "output" / name / "app.json").exists():
+        kit = json.loads((ROOT / "output" / name / "app.json").read_text()).get("kit")
+    if kit and (KITS / kit / "kit.json").exists():
+        brand = apply_kit(brand, KITS / kit)
+    return brand
+
+
+def read_kit(d):
+    """A brand kit: {"show", "logo" (a file in the kit folder), "colors": {"top", "bottom", "highlight", "text"},
+    "host", "host_role", "about", "notes", "spellings"}. Only what's given changes."""
+    k = json.loads((Path(d) / "kit.json").read_text())
+    return dict(k, name=Path(d).name)
+
+
+def apply_kit(brand, d):
+    k = read_kit(d)
+    c = k.get("colors", {})
+    b = json.loads(json.dumps(brand))
+    for key, ck in (("bg_top", "top"), ("bg_bottom", "bottom")):
+        if c.get(ck):
+            b["canvas"][key] = c[ck]
+    if c.get("highlight"):
+        b["captions"]["highlight"] = c["highlight"]
+    if c.get("text"):
+        b["captions"]["color"] = c["text"]
+    logo = Path(d) / k["logo"] if k.get("logo") else None
+    b["logo"]["file"] = str(logo) if logo and logo.is_file() else None  # no logo: the clips go without one
+    pick = b.setdefault("pick", {})
+    for f in ("show", "host", "host_role", "about", "notes"):
+        if f in k:
+            pick[f] = k[f]
+    if "host" in k:  # a kit's host comes with their own job title, never another show's
+        pick["host_role"] = k.get("host_role", "")
+    # brand.json's spellings are The Dokkcast's own names (Marsden, udokk...): another show gets only its kit's
+    own = b["episode"]["spellings"] if k["name"] == DEFAULT_KIT else {}
+    b["episode"]["spellings"] = dict(own, **k.get("spellings", {}))
+    show = k.get("show") or k["name"]
+    b["show"] = {"name": show, "kicker": k.get("kicker") or show, "zip": k.get("zip") or f"{show} posts"}
+    b["kit"] = k["name"]
+    return b
+
+
+def day_off(d, social):
+    """True for a date in one of brand.json social "off" periods, e.g. ["12-24", "01-01"] for Christmas
+    to New Year, every year (a period may run over the year's end)."""
+    md = d.strftime("%m-%d")
+    return any((a <= md <= b) if a <= b else (md >= a or md <= b) for a, b in social.get("off", []))
 
 
 # ------------------------------------------------------------------ transcribe
@@ -175,9 +243,18 @@ def make_background(brand, path):
 
 
 def make_logo(brand, path):
-    import cairosvg
-    cairosvg.svg2png(url=str(ROOT / brand["logo"]["file"]), write_to=str(path),
-                     output_width=brand["logo"]["width"])
+    """The logo as a PNG at the layout's width (an SVG, PNG or JPEG); False when the brand has none."""
+    if not brand["logo"].get("file"):
+        return False
+    f, w = ROOT / brand["logo"]["file"], brand["logo"]["width"]
+    if f.suffix.lower() == ".svg":
+        import cairosvg
+        cairosvg.svg2png(url=str(f), write_to=str(path), output_width=w)
+    else:
+        from PIL import Image
+        im = Image.open(f).convert("RGBA")
+        im.resize((w, max(1, round(im.height * w / im.width))), Image.LANCZOS).save(path)
+    return True
 
 
 def detect_crop(video):
@@ -282,17 +359,47 @@ def pan_expression(runs, xs, lead, pan):
     return f"{x0:.1f}" + "".join(f"+{t}" for t in terms)
 
 
-def render(video, words_json, out_mp4, brand, work, layout="wide"):
+def layout_brand(brand, L):
+    """A layout may override canvas size, caption and logo settings (e.g. square, landscape)."""
+    b = json.loads(json.dumps(brand))
+    for k in ("canvas", "captions", "logo"):
+        b[k].update(L.get(k, {}))
+    return b
+
+
+def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=None, frame=None):
+    """frame {"x": 0..1}: fill the whole canvas with the picture, its centre at x across it (set by dragging
+    the preview on the review page), instead of the layout's own framing."""
     work.mkdir(parents=True, exist_ok=True)
     words = json.loads(Path(words_json).read_text())
-    c, L = brand["canvas"], brand["layouts"][layout]
+    L = brand["layouts"][layout]
+    brand = layout_brand(brand, L)
+    c = brand["canvas"]
     W, H = c["width"], c["height"]
     dur = float(sh(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video)]).stdout)
+    fps = sh(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+              "-of", "csv=p=0", str(video)]).stdout.strip()  # keep the source's frame rate
+    try:
+        n, _, d = fps.partition("/")
+        ok = 10 < float(n) / float(d or 1) <= 61
+    except ValueError:
+        ok = False
+    fps = fps if ok else "24000/1001"  # odd ones (variable-rate phone video) get the old film rate
     band = L["crop"] if L["crop"] != "auto" else detect_crop(video)
     bw, bh, bx, by = map(int, band.split(":"))
-    if L["follow"]:
+    if frame is not None:
+        ww = min(bw, round(bh * W / H / 2) * 2)  # the canvas shape at the picture's full height
+        x0 = bx + max(0, min(bw - ww, round(float(frame.get("x", 0.5)) * bw - ww / 2)))
+        vid_h = round(bh * W / ww / 2) * 2
+        vid_y = (H - vid_h) // 2
+        vfilter = f"crop={ww}:{bh}:{x0}:{by},scale={W}:{vid_h}:flags=lanczos"
+        cap = brand["captions"]  # over the picture rather than the plain background: an outline keeps them readable
+        cap["outline"], cap["shadow"] = max(cap.get("outline", 0), 4), max(cap.get("shadow", 0), 3)
+        # the logo goes smaller into the top corner, off the speaker's head
+        brand["logo"]["width"] = round(brand["logo"]["width"] * FILL_LOGO["scale"])
+    elif L["follow"]:
         ww = L["window_width"]
-        turns_json = ROOT / "output" / f"{Path(video).stem}.turns.json"
+        turns_json = Path(turns_json) if turns_json else ROOT / "output" / f"{Path(video).stem}.turns.json"
         turns = json.loads(turns_json.read_text()) if turns_json.exists() else diarize(video, turns_json, brand["models"])
         sides = L["speaker_sides"]
         if sides == "auto":
@@ -311,15 +418,24 @@ def render(video, words_json, out_mp4, brand, work, layout="wide"):
         vid_y = (H - vid_h) // 2 + L["video_y_offset"]
         vfilter = f"crop={bw}:{bh}:{bx}:{by},scale={W}:{vid_h}:flags=lanczos"
     bg, logo, ass = work / "bg.png", work / "logo.png", work / "captions.ass"
-    make_background(brand, bg); make_logo(brand, logo); make_ass(words, brand, ass, dur, L["captions_center_y"])
-    from PIL import Image
-    logo_y = L["logo_center_y"] - Image.open(logo).height // 2
+    make_background(brand, bg); make_ass(words, brand, ass, dur, L["captions_center_y"])
     fonts = (ROOT / "assets/fonts").as_posix()
-    fc = (f"[0:v]{vfilter}[v];[1:v][v]overlay=0:{vid_y}[a];"
-          f"[a][2:v]overlay=(W-w)/2:{logo_y}[b];[b]subtitles={ass.as_posix()}:fontsdir={fonts}[out]")
-    sh(["ffmpeg", "-y", "-v", "error", "-i", str(video), "-loop", "1", "-i", str(bg), "-loop", "1", "-i", str(logo),
+    fc = f"[0:v]{vfilter}[v];[1:v][v]overlay=0:{vid_y}[a];"
+    inputs = ["-i", str(video), "-loop", "1", "-i", str(bg)]
+    if make_logo(brand, logo):
+        from PIL import Image
+        if frame is not None:
+            lx, logo_y = FILL_LOGO["margin"], FILL_LOGO["margin"]
+        else:
+            lx, logo_y = L.get("logo_x", "(W-w)/2"), L["logo_center_y"] - Image.open(logo).height // 2
+        fc += f"[a][2:v]overlay={lx}:{logo_y}[a2];"
+        inputs += ["-loop", "1", "-i", str(logo)]
+    else:
+        fc += "[a]null[a2];"
+    fc += f"[a2]subtitles={ass.as_posix()}:fontsdir={fonts}[out]"
+    sh(["ffmpeg", "-y", "-v", "error"] + inputs + [
         "-filter_complex", fc, "-map", "[out]", "-map", "0:a?", "-t", f"{dur}", "-c:v", "libx264", "-crf", "18",
-        "-preset", "medium", "-pix_fmt", "yuv420p", "-r", "24000/1001", "-c:a", "aac", "-b:a", "192k",
+        "-preset", "medium", "-pix_fmt", "yuv420p", "-r", fps, "-c:a", "aac", "-b:a", "192k",
         "-movflags", "+faststart", str(out_mp4)])
     print(f"rendered -> {out_mp4}")
 
