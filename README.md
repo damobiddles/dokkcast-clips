@@ -71,3 +71,19 @@ The app runs these; each also works on its own from `App/` with `.venv/bin/pytho
 Layouts, caption style, music level and posting days and times are in `brand.json`. `dokkepisode.py`
 can still make a full-length edit (`review`, then `render` without `--only clips`), and `dokkpost.py
 schedule` can post through Postiz, but neither is part of the routine.
+
+## Final Cut: the full episode, before Offcuts
+
+`finalcut.py` turns the raw camera files into the finished full-length episode and puts it in
+Offcuts' Source files folder (brief: `docs/final-cut-brief.md`). One folder per episode, with
+`main.*`, `intro.*`, `intro-music.wav` and optionally `outro.*` (otherwise the show's shared outro
+from `final-cut.config.json`):
+
+    python finalcut.py "~/Offcuts/Final Cut/Episodes/<episode>"          # runs, or carries on
+    python finalcut.py <episode> --go                    # after checking the cuts in the Auphonic Editor
+    python finalcut.py <episode> --retakes 1,3           # cut those retakes (all / none) and carry on
+    python finalcut.py <episode> --excerpt 10:00-12:30 --music both     # a short test, both music modes
+
+It needs the Auphonic command line tool (https://auphonic.com/cli) and `AUPHONIC_API_KEY=...` in
+`.env` next to the app (never committed). Settings, including the Auphonic preset, music mode and
+levels, zoom on cuts and the review pauses, are in `final-cut.config.json`.
