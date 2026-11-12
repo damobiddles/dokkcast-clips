@@ -467,7 +467,8 @@ def not_in_zip(wd, z):
     import zipfile
     try:
         with zipfile.ZipFile(z) as zf:
-            have = {(i.filename.split("kit/", 1)[-1], i.file_size) for i in zf.infolist()}
+            # entries are "<top folder>/<post folder>/<video>": the top folder is "kit" or the zip's name
+            have = {(i.filename.split("/", 1)[-1], i.file_size) for i in zf.infolist()}
     except (OSError, zipfile.BadZipFile):
         return ["anything: it can't be opened"]
     want = [f for f in (wd / "kit").glob("*/*.mp4")]

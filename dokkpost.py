@@ -325,6 +325,10 @@ def kit(name, brand):
 def make_zip(name, title=None, brand=None):
     """The kit as one zip for Slack, with real files (not links) inside."""
     wd = work_dir(name)
+    if not (wd / "kit").exists():  # a zip stopped halfway leaves the kit under the zip's name: put it back
+        left = [d for d in wd.glob("* - *") if d.is_dir() and (d / "kit.html").exists()]
+        if len(left) == 1:
+            left[0].rename(wd / "kit")
     if not (wd / "kit" / "kit.html").exists():
         sys.exit(f"no kit yet: run `dokkpost.py kit {name}` first")
     if not title:
@@ -338,10 +342,18 @@ def make_zip(name, title=None, brand=None):
     if z.exists() and str(z) != mine:  # another episode's zip (same show and guest): never write over it
         z = z.with_name(f"{z.stem} ({name}).zip")
     z.unlink(missing_ok=True)
-    if shutil.which("ditto"):
-        subprocess.run(["ditto", "-c", "-k", "--keepParent", str(wd / "kit"), str(z)], check=True)
-    else:
-        shutil.make_archive(str(z.with_suffix("")), "zip", wd, "kit")
+    # inside the zip the folder has the zip's own name, so it unzips to "<show> posts - <guest>", not "kit"
+    named = wd / z.stem
+    if named.exists():
+        raise SystemExit(f"{named} is in the way of making the zip: move it out of the episode folder")
+    (wd / "kit").rename(named)
+    try:
+        if shutil.which("ditto"):
+            subprocess.run(["ditto", "-c", "-k", "--keepParent", str(named), str(z)], check=True)
+        else:
+            shutil.make_archive(str(z.with_suffix("")), "zip", wd, named.name)
+    finally:
+        named.rename(wd / "kit")
     (wd / "zip.txt").write_text(str(z))  # so the app knows which zip is this episode's
     print(f"{z} ({z.stat().st_size / 1e6:.0f} MB)")
     return z
