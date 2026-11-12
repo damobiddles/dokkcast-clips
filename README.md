@@ -18,8 +18,10 @@ Everything lives in one folder, `~/Offcuts` (macOS won't let the app open Deskto
     Where things are.txt
 
 Set up once from `App/`: `./setup.sh` (ffmpeg, Python packages, ~700 MB of models), then
-`scripts/make_app.sh` for the Offcuts app and launcher. Offcuts is a small local web app on
-http://127.0.0.1:8765 that Chrome can also install as an app; it answers only its own pages.
+`scripts/make_app.sh` for the Offcuts app and launcher. The app is its own window (a small Swift
+wrapper, `assets/mac/OffcutsWindow.swift`, built by make_app.sh with the Xcode command line tools)
+around a local server on http://127.0.0.1:8765 that answers only its own pages. Closing the window
+leaves the server running, so anything being made carries on; outside links open in the browser.
 
 ## An episode, start to finish
 

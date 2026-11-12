@@ -28,19 +28,39 @@ APP="$HOME/Applications/$NAME.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 rm -f "$APP/Contents/MacOS/dokkcast"  # the old launcher name
-cat > "$APP/Contents/MacOS/$EXE" <<RUN
+# the server opens the browser itself only when there's no window to show the page in
+NOBROWSER=""; xcrun --find swiftc >/dev/null 2>&1 && NOBROWSER="DOKK_NO_BROWSER=1"
+# the background server, started by the app's window when it isn't already running
+cat > "$APP/Contents/Resources/start-server.sh" <<RUN
 #!/bin/bash
-# already running? just show it
-if curl -sf http://127.0.0.1:8765/api/state >/dev/null; then open http://127.0.0.1:8765/; exit 0; fi
 export PATH="\$HOME/.local/bin:/opt/homebrew/opt/ffmpeg-full/bin:/usr/local/opt/ffmpeg-full/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH"
 cd "$REPO"
 mkdir -p output
-# on Apple Silicon, run natively: macOS starts this script under Rosetta, where the Python packages won't load
+# on Apple Silicon, run natively: macOS can start this script under Rosetta, where the Python packages won't load
 ARCH=""; [ "\$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ] && ARCH="arch -arm64"
-# caffeinate keeps the Mac awake while it runs; the server opens the page itself
-nohup caffeinate -i \$ARCH .venv/bin/python dokkapp.py >> output/app-server.log 2>&1 &
+# caffeinate keeps the Mac awake while it runs
+$NOBROWSER nohup caffeinate -i \$ARCH .venv/bin/python dokkapp.py >> output/app-server.log 2>&1 &
 RUN
-chmod +x "$APP/Contents/MacOS/$EXE"
+chmod +x "$APP/Contents/Resources/start-server.sh"
+
+# the app itself: its own window (assets/mac/OffcutsWindow.swift) when this Mac can build it,
+# otherwise a launcher that opens the page in the browser
+WINDOW=0
+if xcrun --find swiftc >/dev/null 2>&1 && \
+   xcrun swiftc -O -o "$APP/Contents/MacOS/$EXE" "$REPO/assets/mac/OffcutsWindow.swift" -framework Cocoa -framework WebKit; then
+  WINDOW=1
+else
+  echo "(couldn't build the Offcuts window, so it opens in the browser: xcode-select --install, then run this again)"
+  cat > "$APP/Contents/MacOS/$EXE" <<RUN
+#!/bin/bash
+# already running? just show it
+if curl -sf http://127.0.0.1:8765/api/state >/dev/null; then open http://127.0.0.1:8765/; exit 0; fi
+bash "\$(dirname "\$0")/../Resources/start-server.sh"
+RUN
+  chmod +x "$APP/Contents/MacOS/$EXE"
+fi
+if [ $WINDOW = 1 ]; then UI="<key>NSHighResolutionCapable</key><true/>"; else UI="<key>LSUIElement</key><true/>"; fi
+[ $WINDOW = 1 ] || sed -i '' 's|^DOKK_NO_BROWSER=1 ||' "$APP/Contents/Resources/start-server.sh"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -51,7 +71,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>$EXE</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>LSUIElement</key><true/>
+  $UI
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>LSArchitecturePriority</key><array><string>arm64</string><string>x86_64</string></array>
 </dict></plist>
 PLIST
