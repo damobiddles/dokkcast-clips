@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&display=swap">
 <style>
-/* Layout: one column of posting days, each a card of platform tiles; a slim sticky bar holds the filters. Offcuts' charcoal look. */
+/* Layout: one column of posting days, each a card of platform tiles; a slim sticky bar holds the filters. Always the dark charcoal look, with no branding. */
 :root {
   --bg: #eef0f2; --panel: #ffffff; --panel-2: #f5f6f8; --line: #d9dde3; --fg: #17191d; --dim: #5d636e;
   --accent: #1d2026; --accent-fg: #f6f4ef; --ok: #1f8a57; --ok-soft: #e3f3ea; --warn: #b4540f; --warn-soft: #fbeadc;
@@ -27,7 +27,7 @@
   --today: #8fb4f5; --today-soft: #1c2a44; --shadow: none; color-scheme: dark;
 }
 * { box-sizing: border-box; }
-body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
+body { background: var(--bg) linear-gradient(180deg, #1a1c1f 0, var(--bg) 420px) no-repeat; color: var(--fg); font: 15px/1.5 var(--body); min-height: 100vh; }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
 .wrap { max-width: 1080px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 header { padding-block: 22px 8px; }
@@ -111,8 +111,8 @@ a.btn { color: var(--fg); }
 </head>
 <body>
 <header><div class="wrap">
-  <h1>Posting Desk</h1>
-  <p class="lede">Every clip that's due to go out, with its video, cover and caption for each platform. Tick a platform once it's posted or scheduled, and everyone sees it.</p>
+  <h1 id="h1">Posting Desk</h1>
+  <p class="lede" id="lede">Every clip that's due to go out, with its video, cover and caption for each platform. Tick a platform once it's posted or scheduled, and everyone with the link sees it.</p>
   <div class="stats" id="stats"><span class="chip">Loading the posts…</span></div>
 </div></header>
 
@@ -144,7 +144,7 @@ a.btn { color: var(--fg); }
 
   <section class="panel" id="admin" hidden>
     <h2>Episodes on the desk</h2>
-    <p>Add an episode by choosing its zip from Ready to post (for example "Dokkcast posts - Banerjee.zip"). The clips, covers and captions are copied up, so whoever posts doesn't need the zip. Adding the same episode again replaces it and keeps the ticks.</p>
+    <p>Add an episode by choosing its zip from Ready to post. The clips, covers and captions are copied up, so whoever posts doesn't need the zip. Each episode gets its own private link: send it to whoever posts that episode, and they see only that episode. Adding the same episode again replaces it and keeps its ticks and link.</p>
     <div class="actions">
       <input type="file" id="zip" accept=".zip,application/zip" hidden>
       <button class="primary" id="add">Add an episode zip</button>
@@ -163,6 +163,7 @@ a.btn { color: var(--fg); }
       <li>Post it, or schedule it for the card's time.</li>
       <li>Tick <b>Posted</b> on that platform. Everyone sees the tick and your name.</li>
       <li>Don't change the captions. If something looks wrong, ask whoever sent you this link.</li>
+      <li>Keep this link to yourself. Anyone who has it can see the clips and tick them.</li>
     </ol>
   </details>
 

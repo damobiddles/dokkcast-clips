@@ -1,4 +1,5 @@
-// Posting Desk: the posts from every episode, with shared "Posted" ticks. Data comes from /api (Netlify Blobs).
+// Posting Desk: the posts of one episode (opened by its private link ?e=...), with shared "Posted" ticks.
+// With the admin key it shows every episode and lets you add, remove and share them. Data comes from /api (Netlify Blobs).
 const NAMES = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube Shorts", linkedin: "LinkedIn" };
 const ORDER = ["tiktok", "instagram", "youtube", "linkedin"];
 const UPLOAD = { tiktok: "https://www.tiktok.com/tiktokstudio/upload", instagram: "https://business.facebook.com/latest/composer",
@@ -11,6 +12,8 @@ const local = {
   get(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } },
   set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) {} },
 };
+const LINK = (new URLSearchParams(location.search).get("e") || "").replace(/[^A-Za-z0-9_-]/g, "");
+const linkFor = share => location.origin + "/?e=" + encodeURIComponent(share);
 const S = { episodes: [], ticks: {}, filter: local.get("desk.filter") || "todo", ep: "", loaded: false, err: "",
             name: local.get("desk.name"), key: local.get("desk.key"), busy: false };
 
@@ -35,12 +38,19 @@ async function api(path, opts = {}) {
 }
 
 async function load() {
+  if (!LINK && !S.key) { S.episodes = []; S.ticks = {}; S.loaded = true; S.err = ""; render(); return; }
   try {
-    const st = await api("/api/state");
-    S.episodes = (st.episodes || []).sort((a, b) => String(a.posts?.[0]?.when || "").localeCompare(String(b.posts?.[0]?.when || "")));
+    const st = await api("/api/state" + (LINK ? "?e=" + encodeURIComponent(LINK) : ""));
+    S.all = st.episodes || [];
+    S.episodes = (LINK ? S.all.filter(e => !st.admin || e.share === LINK) : S.all).sort((a, b) => String(a.posts?.[0]?.when || "").localeCompare(String(b.posts?.[0]?.when || "")));
     S.ticks = st.ticks || {};
     S.err = "";
-  } catch (e) { S.err = "The posts couldn't load. Check your connection and reload."; }
+  } catch (e) {
+    S.err = e.status === 404 ? "This link doesn't open an episode any more. Ask whoever sent it for a new one."
+          : e.status === 403 ? "The admin key isn't right any more. Press Lock, then unlock again."
+          : "The posts couldn't load. Check your connection and reload.";
+    if (e.status === 404) S.episodes = [];
+  }
   S.loaded = true;
   if (!S.busy) { render(); renderAdmin(); }
 }
@@ -59,6 +69,20 @@ function allPosts() {
 }
 
 function render() {
+  const one = LINK && S.episodes.length === 1 ? S.episodes[0] : null;
+  $("h1").textContent = one ? one.title : "Posting Desk";
+  document.title = one ? one.title + " · Posting Desk" : "Posting Desk";
+  $("f-ep").hidden = !!LINK || !S.key;
+  $("admin-toggle").hidden = !!LINK && !S.key;
+  if (!LINK && !S.key) {
+    $("stats").innerHTML = ""; $("help").hidden = true;
+    for (const f of ["todo", "done", "all"]) $("f-" + f).parentElement.hidden = true;
+    $("me-btn").hidden = true;
+    $("list").dataset.sig = "";
+    $("list").innerHTML = `<div class="empty"><b>Open the link you were sent</b>Each episode has its own link. Ask whoever sent you here for it.</div>`;
+    return;
+  }
+  $("help").hidden = false; $("me-btn").hidden = false; $("f-todo").parentElement.hidden = false;
   const posts = allPosts();
   const todo = posts.filter(x => x.state !== "done");
   const over = todo.filter(x => x.state === "overdue").length, today = todo.filter(x => x.state === "today").length;
@@ -82,7 +106,12 @@ function render() {
 
   const list = $("list");
   if (!S.loaded) { list.innerHTML = `<div class="empty"><b>Loading the posts</b>This takes a moment.</div>`; return; }
-  if (!S.episodes.length) { list.innerHTML = `<div class="empty"><b>No episodes yet</b>Clips appear here once an episode has been added under Manage episodes.</div>`; return; }
+  if (!S.episodes.length) {
+    list.dataset.sig = "";
+    list.innerHTML = LINK ? `<div class="empty"><b>This link doesn't open an episode</b>It may have been replaced. Ask whoever sent it for a new one.</div>`
+                          : `<div class="empty"><b>No episodes yet</b>Add an episode zip under Manage episodes.</div>`;
+    return;
+  }
   if (!shown.length) {
     list.innerHTML = `<div class="empty"><b>${S.filter === "todo" ? "Everything's posted" : "Nothing posted yet"}</b>${S.filter === "todo" ? "New clips appear here when the next episode is added." : "Ticked posts show up here."}</div>`;
     return;
@@ -111,7 +140,7 @@ function postCard({ e, p, pls, done, state }) {
   d.innerHTML = `<div class="post-head">
       <span class="when">${esc(String(p.when).slice(11, 16))}</span>
       <span class="state ${state}">${label}</span>
-      <span class="title"><b>Clip ${esc(p.clip)}: ${esc(p.title || "")}</b><br><span class="ep">${esc(e.title)} · ${esc(tzLabel(e.tz))} · ${done.length} of ${pls.length} platforms done</span></span>
+      <span class="title"><b>Clip ${esc(p.clip)}: ${esc(p.title || "")}</b><br><span class="ep">${LINK ? "" : esc(e.title) + " · "}${esc(tzLabel(e.tz))} · ${done.length} of ${pls.length} platforms done</span></span>
     </div><div class="tiles"></div>`;
   const tiles = d.querySelector(".tiles");
   for (const pl of pls) tiles.appendChild(tile(e, p, pl));
@@ -170,7 +199,7 @@ async function setTick(input, ep, clip, pl) {
   if (on && !S.name) { input.checked = false; showMe(true); return; }
   input.disabled = true;
   try {
-    await api("/api/tick", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ep, clip, pl, name: S.name, done: on }) });
+    await api("/api/tick", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ e: LINK, ep, clip, pl, name: S.name, done: on }) });
     if (on) S.ticks[tickId(ep, clip, pl)] = { name: S.name, at: new Date().toISOString() };
     else delete S.ticks[tickId(ep, clip, pl)];
     render();
@@ -200,10 +229,10 @@ $("admin-toggle").onclick = () => {
 $("key-form").onsubmit = async ev => {
   ev.preventDefault();
   S.key = $("key").value.trim();
-  try { await api("/api/admin"); local.set("desk.key", S.key); $("key-panel").hidden = true; $("admin").hidden = false; $("key").value = ""; renderAdmin(); }
+  try { await api("/api/admin"); local.set("desk.key", S.key); $("key-panel").hidden = true; $("admin").hidden = false; $("key").value = ""; $("key-note").textContent = ""; load(); }
   catch (e) { S.key = ""; $("key-note").textContent = e.status === 403 ? "That admin key isn't right." : e.message; $("key-note").className = "note err"; }
 };
-$("lock").onclick = () => { S.key = ""; local.set("desk.key", ""); $("admin").hidden = true; };
+$("lock").onclick = () => { S.key = ""; local.set("desk.key", ""); $("admin").hidden = true; load(); };
 $("add").onclick = () => $("zip").click();
 $("zip").onchange = ev => { const f = ev.target.files[0]; if (f) addZip(f); };
 
@@ -286,7 +315,7 @@ async function addZip(file) {
     await api(`/api/episode/${epId}`, { method: "PUT", headers: { "content-type": "application/json" },
       body: JSON.stringify({ title, episode: D.episode || title, tz: D.tz || "Europe/London", posts, files: Object.values(ids), addedAt: new Date().toISOString() }) });
     const bad = Object.keys(failed).length;
-    say(`${title} is on the desk: ${posts.length} posts${bad ? `. ${bad} file${bad > 1 ? "s" : ""} couldn't be uploaded, and their posts say so` : ""}.`, !!bad);
+    say(`${title} is on the desk: ${posts.length} posts${bad ? `. ${bad} file${bad > 1 ? "s" : ""} couldn't be uploaded, and their posts say so` : ""}. Send its link from the list below.`, !!bad);
   } catch (err) {
     say(err && err.message ? err.message : "That zip couldn't be read. Try again.", true);
   }
@@ -295,15 +324,30 @@ async function addZip(file) {
 }
 
 function renderAdmin() {
-  const box = $("eps");
-  if (!S.episodes.length) { box.innerHTML = `<div class="note">No episodes on the desk yet.</div>`; return; }
-  box.replaceChildren(...S.episodes.map(e => {
+  const box = $("eps"), eps = S.all || S.episodes;
+  if (!eps.length) { box.innerHTML = `<div class="note">No episodes on the desk yet.</div>`; return; }
+  box.replaceChildren(...eps.map(e => {
     const row = document.createElement("div"); row.className = "eprow";
     const ps = e.posts || [], first = ps[0]?.when?.slice(0, 10), last = ps[ps.length - 1]?.when?.slice(0, 10);
-    row.innerHTML = `<span class="name"><b>${esc(e.title)}</b><br><span class="note">${ps.length} posts${first ? `, ${esc(first)} to ${esc(last)}` : ""}</span></span><button>Remove</button>`;
-    row.querySelector("button").onclick = ev => removeEpisode(ev.currentTarget, e);
+    row.innerHTML = `<span class="name"><b>${esc(e.title)}</b><br><span class="note">${ps.length} posts${first ? `, ${esc(first)} to ${esc(last)}` : ""}</span></span>
+      ${e.share ? `<button class="primary c-link">Copy link</button><a class="btn" href="${esc(linkFor(e.share))}" target="_blank" rel="noopener">Open ↗</a>` : ""}
+      <button class="n-link">New link</button><button class="rm">Remove</button>`;
+    const cl = row.querySelector(".c-link"); if (cl) cl.onclick = ev => copy(ev.currentTarget, linkFor(e.share));
+    row.querySelector(".n-link").onclick = ev => newLink(ev.currentTarget, e);
+    row.querySelector(".rm").onclick = ev => removeEpisode(ev.currentTarget, e);
     return row;
   }));
+}
+
+async function newLink(btn, e) {
+  if (e.share && btn.dataset.armed !== "1") {
+    btn.dataset.armed = "1"; btn.textContent = "Old link stops working. Press again";
+    setTimeout(() => { btn.dataset.armed = ""; btn.textContent = "New link"; }, 4000);
+    return;
+  }
+  btn.disabled = true;
+  try { const r = await api(`/api/episode/${e.id}/newlink`, { method: "POST" }); e.share = r.share; renderAdmin(); }
+  catch (er) { btn.disabled = false; btn.textContent = "Couldn't make a link. Try again"; }
 }
 
 async function removeEpisode(btn, e) {
