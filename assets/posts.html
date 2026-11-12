@@ -153,6 +153,7 @@ function draw() {
       const m = (p.frame[shape] || {}).mode || (p.speakers > 1 ? "auto" : "fill");
       return modes().includes(m) ? m : "fit";
     };
+    const filled = () => mode() === "fill" || (mode() === "auto" && !!L.follow_fill);  // the picture fills the frame
     const xpos = () => (p.frame[shape] || {}).x ?? 0.5;
     const showingMade = () => made[shape] && !reframed[shape];
     const mixing = () => !!(mus && mus.checked && !showingMade());
@@ -167,23 +168,23 @@ function draw() {
       logo.hidden = !(over && L.logo); cap.hidden = !over || !p.sample || !p.sample.length;
       if (L.logo) {
         logo.src = L.logo;
-        const fl = mode() === "fill" && L.fill_logo;  // filled: smaller, in the top left corner, as the render does
+        const fl = filled() && L.fill_logo;  // over the picture: smaller, in the top left corner, as the render does
         Object.assign(logo.style, fl ? { width: pct(g.logo_w * fl.scale, g.w), left: pct(fl.margin, g.w), top: pct(fl.margin, g.h), transform: "none" }
           : { width: pct(g.logo_w, g.w), left: "50%", top: pct(g.logo_y, g.h), transform: "" });
       }
       cap.style.top = pct(g.cap_y, g.h); cap.style.setProperty("--fs", g.cap_size / g.w);
       cap.innerHTML = (p.sample || []).map((w, i) => i === 1 ? `<b style="color:${L.hi}">${esc(w)}</b>` : esc(w)).join(" ");
-      cap.style.color = L.text; cap.classList.toggle("outlined", mode() === "fill");
+      cap.style.color = L.text; cap.classList.toggle("outlined", filled());
       if (!over) { Object.assign(v.style, { left: 0, top: 0, width: "100%", height: "100%", objectFit: "contain" }); dims = null; }
       else {
         const vw = v.videoWidth || 16, vh = v.videoHeight || 9;
         let ww, left, top;
         if (mode() === "fill") ww = Math.min(vw, vh * g.w / g.h);
-        else if (mode() === "auto") ww = g.window <= 1 ? g.window * vw : Math.min(g.window, vw);
+        else if (mode() === "auto") ww = L.follow_fill ? Math.min(vw, vh * g.w / g.h) : g.window <= 1 ? g.window * vw : Math.min(g.window, vw);
         else ww = vw;
         const W = vw * g.w / ww, H = vh * g.w / ww;  // the whole picture at that scale
         if (mode() === "fill") { left = Math.max(g.w - W, Math.min(0, g.w / 2 - xpos() * W)); top = (g.h - H) / 2; }
-        else if (mode() === "auto") { left = (g.w - W) / 2; top = g.video_y - H / 2; }
+        else if (mode() === "auto") { left = (g.w - W) / 2; top = L.follow_fill ? (g.h - H) / 2 : g.video_y - H / 2; }
         else { left = 0; top = (g.h - H) / 2 + (g.offset || 0); }
         dims = { W, ww, vw, g };
         Object.assign(v.style, { left: pct(left, g.w), top: pct(top, g.h), width: pct(W, g.w), height: pct(H, g.h), objectFit: "fill" });

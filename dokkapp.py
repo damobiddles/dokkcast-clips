@@ -23,7 +23,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
-from dokkclip import DEFAULT_KIT, KITS, READY, ROOT, STUDIO, VIDEOS, day_off, read_kit
+from dokkclip import DEFAULT_KIT, KITS, READY, ROOT, STUDIO, VIDEOS, day_off, logo_scale, read_kit
 from dokkpick import api_key
 from dokkpost import DAYS, desk_call, desk_key
 
@@ -396,6 +396,8 @@ def save_kit(b):
     for f in KIT_FIELDS:
         if f in b:
             k[f] = str(b[f]).strip()
+    if "logo_size" in b:
+        k["logo_size"] = round(logo_scale(b) * 100)
     colors = b.get("colors") or {}
     k["colors"] = {c: v for c, v in dict(k.get("colors", {}), **colors).items() if re.fullmatch(r"#[0-9A-Fa-f]{6}", v or "")}
     d.mkdir(parents=True, exist_ok=True)

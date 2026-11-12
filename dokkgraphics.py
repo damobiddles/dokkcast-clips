@@ -10,7 +10,7 @@ Writes output/<name>/graphics/<name>_clipN_<shape>.png (landscape too with --all
 import argparse, json, tempfile
 from pathlib import Path
 
-from dokkclip import ROOT, load_brand, make_logo
+from dokkclip import LOGO_SIZE, ROOT, load_brand, make_logo
 
 SHAPES = {  # canvas, photo box, fade (side, px), text box, logo (x, y, width)
     "landscape": dict(size=(1920, 1080), photo=(900, 0, 1920, 1080), fade=("left", 420),
@@ -119,6 +119,7 @@ def graphic(brand, shape, photo, focus, logo, kicker, title, name, role, out):
         d.text((x0, y), role, font=rf, fill=hi)
     if logo:
         lx, ly, lw = L["logo"]
+        lw = round(lw * brand["logo"].get("scale", LOGO_SIZE / 100))  # the kit's logo size
         lg = logo.resize((lw, round(logo.height * lw / logo.width)), Image.LANCZOS)
         img.paste(lg, (lx, ly), lg)
     img.save(out)
@@ -143,7 +144,7 @@ def main():
     photo = Image.open(pf).convert("RGB") if pf.exists() else None  # none: each cover uses a still from its clip
     focus = tuple(float(v) for v in a.focus.split(","))
     with tempfile.TemporaryDirectory() as tmp:
-        lb = dict(brand, logo=dict(brand["logo"], width=900))
+        lb = dict(brand, logo=dict(brand["logo"], width=900, scale=1))
         logo = Image.open(Path(tmp) / "logo.png").convert("RGBA") if make_logo(lb, Path(tmp) / "logo.png") else None
     out = wd / "graphics"; out.mkdir(exist_ok=True)
     clips = [c for c in plan.get("clips", []) if not c.get("skip")]

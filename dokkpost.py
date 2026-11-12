@@ -40,7 +40,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from dokkclip import FILL_LOGO, READY, ROOT, STUDIO, day_off, layout_brand, load_brand
+from dokkclip import FILL_LOGO, FOLLOW_FILL, LOGO_SIZE, READY, ROOT, STUDIO, day_off, layout_brand, load_brand
 from dokkepisode import load_plan
 
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -186,12 +186,12 @@ def look(brand):
     out = {"top": brand["canvas"]["bg_top"], "bottom": brand["canvas"]["bg_bottom"],
            "text": brand["captions"]["color"], "hi": brand["captions"]["highlight"],
            "logo": f"data:{kind};base64," + base64.b64encode(f.read_bytes()).decode() if logo and kind and f.is_file() else None,
-           "shapes": {}, "fill_logo": FILL_LOGO}
+           "shapes": {}, "fill_logo": FILL_LOGO, "follow_fill": FOLLOW_FILL}
 
     def geo(name):
         L = brand["layouts"][name]; b = layout_brand(brand, L)
         return {"w": b["canvas"]["width"], "h": b["canvas"]["height"], "logo_y": L["logo_center_y"],
-                "logo_w": b["logo"]["width"], "cap_y": L["captions_center_y"], "cap_size": b["captions"]["size"],
+                "logo_w": b["logo"]["width"] * b["logo"].get("scale", LOGO_SIZE / 100), "cap_y": L["captions_center_y"], "cap_size": b["captions"]["size"],
                 "follow": bool(L.get("follow")), "window": L.get("window_width"), "video_y": L.get("video_center_y"),
                 "offset": L.get("video_y_offset", 0)}
     for shape, layout in brand["clips"]["formats"].items():

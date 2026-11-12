@@ -22,7 +22,9 @@ VIDEOS = STUDIO / "Source files" if STUDIO else Path("~/Movies/Dokkcast").expand
 READY = STUDIO / "Ready to post" if STUDIO else Path("~/Movies/Dokkcast").expanduser()
 KITS = STUDIO / "Brand kits" if STUDIO else ROOT / "brand-kits"  # one folder per client: kit.json and a logo
 DEFAULT_KIT = "The Dokkcast"
-FILL_LOGO = {"scale": 0.55, "margin": 60}  # a filled frame's logo: this much smaller, in the top left corner  # episodes from before brand kits
+FILL_LOGO = {"scale": 0.55, "margin": 60}  # a filled frame's logo: this much smaller, in the top left corner
+FOLLOW_FILL = True  # Follow speaker fills the whole portrait frame too (False: the old band across the middle)
+LOGO_SIZE = 70  # a kit's logo, as a percentage of the layout's logo width, unless the kit sets "logo_size"
 # Homebrew's ffmpeg-full has libass for captions and is not on PATH by default
 for _d in ("/opt/homebrew/opt/ffmpeg-full/bin", "/usr/local/opt/ffmpeg-full/bin"):
     if Path(_d).is_dir():
@@ -60,6 +62,14 @@ def read_kit(d):
     return dict(k, name=Path(d).name)
 
 
+def logo_scale(k):
+    """A kit's logo size (30 to 100 per cent of the layout's logo width) as a fraction."""
+    try:
+        return max(30, min(100, int(k.get("logo_size", LOGO_SIZE)))) / 100
+    except (TypeError, ValueError):
+        return LOGO_SIZE / 100
+
+
 def apply_kit(brand, d):
     k = read_kit(d)
     c = k.get("colors", {})
@@ -73,6 +83,7 @@ def apply_kit(brand, d):
         b["captions"]["color"] = c["text"]
     logo = Path(d) / k["logo"] if k.get("logo") else None
     b["logo"]["file"] = str(logo) if logo and logo.is_file() else None  # no logo: the clips go without one
+    b["logo"]["scale"] = logo_scale(k)
     pick = b.setdefault("pick", {})
     for f in ("show", "host", "host_role", "about", "notes"):
         if f in k:
@@ -246,7 +257,7 @@ def make_logo(brand, path):
     """The logo as a PNG at the layout's width (an SVG, PNG or JPEG); False when the brand has none."""
     if not brand["logo"].get("file"):
         return False
-    f, w = ROOT / brand["logo"]["file"], brand["logo"]["width"]
+    f, w = ROOT / brand["logo"]["file"], max(8, round(brand["logo"]["width"] * brand["logo"].get("scale", LOGO_SIZE / 100)))
     if f.suffix.lower() == ".svg":
         import cairosvg
         cairosvg.svg2png(url=str(f), write_to=str(path), output_width=w)
@@ -398,7 +409,7 @@ def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=No
         # the logo goes smaller into the top corner, off the speaker's head
         brand["logo"]["width"] = round(brand["logo"]["width"] * FILL_LOGO["scale"])
     elif L["follow"]:
-        ww = L["window_width"]
+        ww = min(bw, round(bh * W / H / 2) * 2) if FOLLOW_FILL else L["window_width"]
         turns_json = Path(turns_json) if turns_json else ROOT / "output" / f"{Path(video).stem}.turns.json"
         turns = json.loads(turns_json.read_text()) if turns_json.exists() else diarize(video, turns_json, brand["models"])
         sides = L["speaker_sides"]
@@ -411,8 +422,12 @@ def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=No
         print("camera cuts:", [(round(t, 1), s) for t, s in runs])
         xexpr = pan_expression(runs, xs, L["lead"], L["pan_seconds"])
         vid_h = round(bh * W / ww / 2) * 2
-        vid_y = L["video_center_y"] - vid_h // 2
+        vid_y = (H - vid_h) // 2 if FOLLOW_FILL else L["video_center_y"] - vid_h // 2
         vfilter = f"crop={ww}:{bh}:x='{xexpr}':y={by},scale={W}:{vid_h}:flags=lanczos"
+        if FOLLOW_FILL:  # over the picture, like Fill: outlined captions, the logo smaller in the corner
+            cap = brand["captions"]
+            cap["outline"], cap["shadow"] = max(cap.get("outline", 0), 4), max(cap.get("shadow", 0), 3)
+            brand["logo"]["width"] = round(brand["logo"]["width"] * FILL_LOGO["scale"])
     else:
         vid_h = round(bh * W / bw / 2) * 2
         vid_y = (H - vid_h) // 2 + L["video_y_offset"]
@@ -424,7 +439,7 @@ def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=No
     inputs = ["-i", str(video), "-loop", "1", "-i", str(bg)]
     if make_logo(brand, logo):
         from PIL import Image
-        if frame is not None:
+        if frame is not None or (L["follow"] and FOLLOW_FILL):
             lx, logo_y = FILL_LOGO["margin"], FILL_LOGO["margin"]
         else:
             lx, logo_y = L.get("logo_x", "(W-w)/2"), L["logo_center_y"] - Image.open(logo).height // 2

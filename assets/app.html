@@ -132,6 +132,7 @@
         <label>Kit name</label><input type="text" id="k-name" placeholder="The client or show, e.g. Acme Health">
         <label>Show name</label><input type="text" id="k-show" placeholder="As it appears on the covers, e.g. The Acme Podcast">
         <label>Logo</label><div class="pick"><button id="k-logo">Choose…</button><button id="k-nologo">No logo</button><span class="path" id="k-logo-p">None</span></div>
+        <label>Logo size</label><div class="pick"><input type="range" id="k-lsize" min="30" max="100" step="5" value="70"><span class="path set" id="k-lsize-p">70%</span></div>
         <label>Colours</label><div class="swatches">
           <label><input type="color" id="k-top"> Background top</label>
           <label><input type="color" id="k-bottom"> Background bottom</label>
@@ -450,6 +451,7 @@ function mock(el, k, logoUrl) {
   el.style.background = `linear-gradient(${c.top || "#111214"}, ${c.bottom || "#26272B"})`;
   const img = el.querySelector("img");
   if (logoUrl) { img.src = logoUrl; img.hidden = false; } else { img.removeAttribute("src"); img.hidden = true; }
+  img.style.width = (36 * (k.logo_size || 70) / 100) + "%";
   el.querySelector(".cap1").innerHTML = `This is how the <span style="color:${esc(c.highlight || "#F2C94C")}">captions</span> look`;
 }
 async function loadKits(keep) {
@@ -481,6 +483,7 @@ function editKit(k) {
   f("k-top").value = c.top || "#111214"; f("k-bottom").value = c.bottom || "#26272B"; f("k-hi").value = c.highlight || "#F2C94C";
   f("k-logo-p").textContent = k && k.logo_url ? "Kept: " + k.logo : "None"; f("k-logo-p").classList.toggle("set", !!(k && k.logo_url));
   f("k-logo-p").dataset.none = "";
+  f("k-lsize").value = (k && k.logo_size) || 70;
   drawMock();
   loadKits();
   f("kit-edit").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -489,9 +492,10 @@ function drawMock() {
   const f = id => document.getElementById(id);
   const none = f("k-logo-p").dataset.none === "1";
   const url = kitLogo ? "/media" + kitLogo : (!none && editing && editing.logo_url) || null;
-  mock(f("k-mock"), { colors: { top: f("k-top").value, bottom: f("k-bottom").value, highlight: f("k-hi").value } }, url);
+  f("k-lsize-p").textContent = f("k-lsize").value + "%";
+  mock(f("k-mock"), { colors: { top: f("k-top").value, bottom: f("k-bottom").value, highlight: f("k-hi").value }, logo_size: +f("k-lsize").value }, url);
 }
-["k-top", "k-bottom", "k-hi"].forEach(id => document.getElementById(id).oninput = drawMock);
+["k-top", "k-bottom", "k-hi", "k-lsize"].forEach(id => document.getElementById(id).oninput = drawMock);
 document.getElementById("k-logo").onclick = async () => {
   const { path } = await post("/api/choose", { kind: "logo" });
   if (!path) return;
@@ -507,7 +511,7 @@ document.getElementById("k-save").onclick = async () => {
   const f = id => document.getElementById(id).value;
   const body = { name: f("k-name"), new: !editing, show: f("k-show"), host: f("k-host"), host_role: f("k-role"),
     about: f("k-about"), notes: f("k-notes"), colors: { top: f("k-top"), bottom: f("k-bottom"), highlight: f("k-hi") },
-    logo: kitLogo, no_logo: document.getElementById("k-logo-p").dataset.none === "1" };
+    logo_size: +f("k-lsize"), logo: kitLogo, no_logo: document.getElementById("k-logo-p").dataset.none === "1" };
   const { name } = await post("/api/kit", body);
   toast(`Saved the ${name} brand kit`, true);
   editing = null; document.getElementById("kit-edit").hidden = true;
