@@ -28,7 +28,8 @@
   .grid { display: grid; grid-template-columns: 150px 1fr; gap: 10px 12px; align-items: center; }
   @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
   .grid label { color: var(--dim); font-size: 14px; }
-  .pick { display: flex; gap: 8px; align-items: center; min-width: 0; }
+  .pick { display: flex; gap: 8px; align-items: center; min-width: 0; flex-wrap: wrap; }
+  .pick select.src { max-width: 280px; }
   .path { color: var(--dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .path.set { color: var(--text); }
   input[type=text], input[type=date], input[type=password] { width: 100%; background: var(--field); color: var(--text); border: var(--bw) solid var(--line);
@@ -176,8 +177,8 @@
     <h2>New episode</h2>
     <div class="grid">
       <label>Brand kit</label><div class="pick"><select id="kit" style="flex:1;min-width:0"></select><button id="kit-new">New brand kit…</button></div>
-      <label>Episode video</label><div class="pick"><button data-choose="video">Choose…</button><span class="path" id="p-video">No file chosen</span></div>
-      <label>Music track</label><div class="pick"><button data-choose="music">Choose…</button><span class="path" id="p-music">None (no music)</span></div>
+      <label>Episode video</label><div class="pick"><select class="src" data-src="video"></select><button data-choose="video">Choose…</button><span class="path" id="p-video">No file chosen</span></div>
+      <label>Music track</label><div class="pick"><select class="src" data-src="music"></select><button data-choose="music">Choose…</button><span class="path" id="p-music">None (no music)</span></div>
       <label>Guest name</label><input type="text" id="guest" placeholder="e.g. Dr. Jane Smith">
       <label>Guest's job</label><input type="text" id="role" placeholder="e.g. Founder, Acme Health">
       <label>First post</label><input type="date" id="start">
@@ -231,6 +232,27 @@ document.querySelectorAll("[data-choose]").forEach(b => b.onclick = async () => 
   pick[kind] = path;
   const el = document.getElementById("p-" + kind); el.textContent = base(path); el.title = path; el.classList.add("set");
 });
+// the same files from a list of everything in Source files, subfolders included
+async function loadSources() {
+  let src; try { src = await (await fetch("/api/sources")).json(); } catch (e) { return; }
+  for (const kind of ["video", "music"]) {
+    const sel = document.querySelector(`select[data-src="${kind}"]`), was = pick[kind] || "";
+    const groups = new Map();
+    for (const f of src[kind]) { if (!groups.has(f.folder)) groups.set(f.folder, []); groups.get(f.folder).push(f); }
+    sel.innerHTML = `<option value="">${kind === "video" ? "From Source files…" : "From Source files (or none)…"}</option>` +
+      [...groups].map(([folder, fs]) => {
+        const opts = fs.map(f => `<option value="${esc(f.path)}" ${f.path === was ? "selected" : ""}>${esc(f.name)}</option>`).join("");
+        return folder ? `<optgroup label="${esc(folder)}">${opts}</optgroup>` : opts;
+      }).join("");
+    sel.hidden = !src[kind].length;
+  }
+}
+document.querySelectorAll("select[data-src]").forEach(sel => sel.onchange = () => {
+  const kind = sel.dataset.src, el = document.getElementById("p-" + kind);
+  pick[kind] = sel.value || null;
+  el.textContent = sel.value ? base(sel.value) : kind === "video" ? "No file chosen" : "None (no music)";
+  el.title = sel.value; el.classList.toggle("set", !!sel.value);
+});
 document.getElementById("go").onclick = async () => {
   if (!pick.video) return toast("Choose the episode video first");
   const { name, warning } = await post("/api/new", { kit: document.getElementById("kit").value, video: pick.video, music: pick.music, photo: pick.photo,
@@ -241,6 +263,7 @@ document.getElementById("go").onclick = async () => {
   document.getElementById("p-video").textContent = "No file chosen";
   document.getElementById("p-music").textContent = "None (no music)";
   document.getElementById("p-photo").textContent = "Optional, for the covers";
+  document.querySelectorAll("select[data-src]").forEach(sel => sel.value = "");
   ["guest", "role"].forEach(id => document.getElementById(id).value = "");
   location.hash = "episodes";
   await refresh();
@@ -415,6 +438,7 @@ function show() {
   const v = (location.hash || "#episodes").slice(1);
   const view = ["episodes", "new", "kits"].includes(v) ? v : "episodes";
   if (view === "kits" || view === "new") loadKits();
+  if (view === "new") loadSources();
   document.querySelectorAll(".view").forEach(s => s.hidden = s.id !== "v-" + view);
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.view === view));
   window.scrollTo(0, 0);

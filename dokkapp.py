@@ -235,6 +235,26 @@ def refind_video(name, st):
     log(name, f"found the video in Source files: {found.name}")
 
 
+VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mxf"}
+MUSIC_EXT = {".wav", ".mp3", ".m4a", ".aac", ".aif", ".aiff", ".flac"}
+
+
+def sources():
+    """Source files' videos and music, by folder (the top level first), for the pickers on New episode.
+    Episode links Offcuts made itself and hidden files are left out."""
+    out = {"video": [], "music": []}
+    if not VIDEOS.is_dir():
+        return out
+    for f in sorted(VIDEOS.rglob("*"), key=lambda f: (len(f.relative_to(VIDEOS).parts) > 1, str(f.relative_to(VIDEOS)).lower())):
+        rel = f.relative_to(VIDEOS)
+        if f.is_symlink() or any(x.startswith(".") for x in rel.parts) or not f.is_file():
+            continue
+        kind = "video" if f.suffix.lower() in VIDEO_EXT else "music" if f.suffix.lower() in MUSIC_EXT else None
+        if kind:
+            out[kind].append({"path": str(f), "name": f.name, "folder": str(rel.parent) if rel.parent != Path(".") else ""})
+    return out
+
+
 def keep_photo(name, path):
     """Copy the guest photo into the episode folder straight away: one dragged from Photos is a
     temporary file that macOS soon deletes."""
@@ -676,6 +696,8 @@ class Handler(BaseHTTPRequestHandler):
             k = next((k for k in kits() if k["name"] == unquote(u.path[10:])), None)
             if k and k.get("logo"):
                 return self.send_file(KITS / k["name"] / k["logo"])
+        if u.path == "/api/sources":  # every video and music track in Source files, subfolders included
+            return self.send(200, sources())
         if u.path == "/api/kits":
             return self.send(200, {"kits": kits(), "last": settings().get("kit") or DEFAULT_KIT})
         if u.path == "/api/state":
