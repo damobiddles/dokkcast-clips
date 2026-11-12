@@ -1,0 +1,27 @@
+HOW TO POST THE CLIPS: {show}
+
+Everything for this episode is in this folder. You don't need any other app.
+
+BEFORE YOUR FIRST POST
+- Ask whoever sent you this for access to the show's accounts: Instagram and Facebook (through Meta
+  Business Suite), the LinkedIn page, the YouTube channel and TikTok.
+- Keep this folder somewhere you'll find it again.
+
+EACH POSTING DAY
+1. Open kit.html in this folder (double-click it). It opens in your web browser.
+2. Find today's post. There's one post per posting day ({days}), at {time} ({tz}).
+3. For each platform shown:
+   - Click Open (TikTok, Instagram, YouTube or LinkedIn) to go to its upload page.
+   - Upload the video from that day's folder (named after the date and clip). The portrait video is
+     for TikTok, Instagram and YouTube Shorts, and the square one is for LinkedIn.
+   - Click Copy caption and paste it in. For YouTube, use Copy title for the title as well.
+   - If the platform lets you pick a cover, use the "cover" image from the same folder.
+   - Post it, or schedule it for {time}.
+4. Tick Done next to that platform once it's posted or scheduled. The ticks are kept in this
+   browser on this computer only.
+
+GOOD TO KNOW
+- Don't change the captions. If something looks wrong, ask before posting.
+- No posts between 24 December and 1 January.
+- If a video won't upload or a button doesn't work, each day's folder also has the captions as plain
+  text files (captions.txt).

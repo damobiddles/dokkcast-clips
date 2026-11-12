@@ -316,6 +316,12 @@ def kit(name, brand):
             g = wd / "graphics" / f"{name}_clip{p['clip']}_{shape}.png"
             if g.exists():
                 shutil.copy2(g, d / f"cover {shape}.png")
+    social = brand["social"]  # a how-to for whoever does the posting (e.g. an intern), in the folder they get
+    days = ", ".join(d.strip()[:3].capitalize() for d in social["days"].split(","))
+    days = "weekdays" if days == "Mon, Tue, Wed, Thu, Fri" else days
+    (out / "How to post.txt").write_text((ROOT / "assets" / "how-to-post.txt").read_text().format(
+        show=brand["show"]["name"], days=days, time=social["time"],
+        tz="UK time" if social["tz"] == "Europe/London" else social["tz"]))
     data["posts"], data["upload"], data["shapes"] = posts, UPLOAD, brand["social"]["shapes"]
     (out / "kit.html").write_text(studio_page((ROOT / "assets" / "kit.html").read_text().replace("/*POSTS*/null", json.dumps(data)), brand))
     print(f"{len(posts)} posts{'' if any(p['approved'] for p in posts) else ' (none approved yet, so all of them)'}"

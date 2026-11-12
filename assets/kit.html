@@ -53,7 +53,7 @@ function summary() {
   const all = D.posts.flatMap(p => Object.keys(p.files).map(pl => p.clip + ":" + pl));
   const n = all.filter(k => done[k]).length;
   document.getElementById("summary").textContent =
-    `${n} of ${all.length} posted or scheduled. Times are ${D.tz}. Videos are in output/${D.episode}/kit/, one folder per post.`;
+    `${n} of ${all.length} posted or scheduled. Times are ${D.tz}. Videos and covers are in this folder, one folder per post. New to this? Read How to post.txt.`;
 }
 
 async function copy(btn, text) {
