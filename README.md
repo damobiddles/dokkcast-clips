@@ -2,7 +2,7 @@
 
 Turns a podcast episode into a month of social posts: short captioned clips in portrait (TikTok,
 Instagram, YouTube Shorts) and square (LinkedIn), a cover graphic for each, the captions to post with
-them, a posting calendar and one zip to share. Made by MBMS Podcast Studio; each client or show has
+them and one zip, then hands them to Posting Desk for whoever does the posting. Made by MBMS Podcast Studio; each client or show has
 its own brand kit. Everything runs on the Mac it's on, and the video never leaves it.
 
 ## On the Mac
@@ -32,8 +32,11 @@ http://127.0.0.1:8765 that Chrome can also install as an app; it answers only it
    Choose how it's framed (Fill and drag, Whole shot, or Follow speaker for two people), set the music
    level, edit the captions and dates, tick Approve, then **Save and make the clips**.
 5. **Make** (about 20 minutes): renders the approved clips with music, the covers, the kit and the zip.
-6. **Calendar:** each day's post with its captions to copy and videos to drag in. Tick Posted; once all
-   are posted, **Tidy up** deletes the videos from Working files and keeps the zip.
+6. **Posting Desk:** **Upload to Posting Desk** puts the episode's posts, videos and covers on the shared
+   posting page (offcuts-posting-desk.netlify.app) and gives a private link to send to whoever posts.
+   The admin key is pasted once under New episode and kept in ~/.dokkcast/desk_key. The zip in Ready to
+   post has the same posts, a kit.html and a How to post.txt, for posting without the desk.
+   **Tidy up** then deletes the videos from Working files and keeps the zip.
 
 An episode card can also **Change brand** (no new transcription) or **Cancel project** (its working
 files go to the Bin; the video stays in Source files).
@@ -59,13 +62,14 @@ The app runs these; each also works on its own from `App/` with `.venv/bin/pytho
 
 | Tool | Does |
 |---|---|
-| `dokkapp.py` | the Offcuts app: episodes, review, calendar, brand kits |
+| `dokkapp.py` | the Offcuts app: episodes, review, brand kits, Posting Desk upload |
 | `dokkepisode.py prep <video>` | transcript, speakers and plan.json in output/<name>/ |
 | `dokkpick.py <name>` | Claude picks the clips and writes copy.json |
 | `dokkpost.py plan / review / apply / finish <name>` | posting dates, the review page, saved choices, make everything |
 | `dokkepisode.py render <name> --only clips` | the clips, framed as chosen on the review page |
 | `dokkgraphics.py <name>` | cover graphics per clip and shape |
 | `dokkpost.py kit / zip <name>` | the posting kit folder and its zip |
+| `dokkpost.py desk <name>` | upload the kit to Posting Desk and print its private link |
 | `dokkclip.py` | the shared rendering: captions, logo, background, layouts |
 
 Layouts, caption style, music level and posting days and times are in `brand.json`. `dokkepisode.py`

@@ -1,0 +1,14 @@
+{
+ "show": "The Dokkcast",
+ "host": "Dr. Nara Daubeney",
+ "host_role": "Consultant ENT surgeon and entrepreneur",
+ "about": "a health podcast",
+ "notes": "No medical claims beyond what is said in the clip.",
+ "zip": "Dokkcast posts",
+ "colors": {
+  "top": "#0A0F2C",
+  "bottom": "#251A63",
+  "highlight": "#75C0FB"
+ },
+ "logo": "logo.svg"
+}

@@ -25,7 +25,7 @@ from urllib.parse import quote, unquote, urlparse
 
 from dokkclip import DEFAULT_KIT, KITS, READY, ROOT, STUDIO, VIDEOS, day_off, read_kit
 from dokkpick import api_key
-from dokkpost import DAYS, UPLOAD
+from dokkpost import DAYS, desk_call, desk_key
 
 OUT = ROOT / "output"  # in the app, a link to <Offcuts>/Working files
 PY = sys.executable
@@ -77,7 +77,10 @@ def run(name, cmd):
 
 def mac(script):
     """Run AppleScript and return what it prints, or None if the user cancelled."""
-    r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    try:
+        r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    except OSError:  # not a Mac
+        return None
     return r.stdout.strip() or None if r.returncode == 0 else None
 
 
@@ -320,41 +323,6 @@ def page(name, path):
 
 
 
-def calendar():
-    """Every post from every finished episode, in date order: the videos, covers and copy from its
-    kit, and which platforms have been posted (ticked in the app, kept in output/<name>/posted.json)."""
-    out = []
-    shapes = json.loads((ROOT / "brand.json").read_text())["social"]["shapes"]
-    for st in episodes(logs=False):
-        name, wd = st["name"], OUT / st["name"]
-        if not (wd / "posts.json").exists() or not (wd / "kit").is_dir():
-            continue
-        posts = json.loads((wd / "posts.json").read_text())["posts"]
-        posted = json.loads((wd / "posted.json").read_text()) if (wd / "posted.json").exists() else {}
-        for p in [p for p in posts if p.get("approved")] or posts:  # as the kit has them
-            try:
-                d = f"{datetime.fromisoformat(p['when']):%Y-%m-%d %a} clip{p['clip']}"
-            except (KeyError, TypeError, ValueError):  # no usable date: leave it off rather than break the calendar
-                continue
-            kit = wd / "kit" / d
-            vids = {}  # a video per platform (older kits) or one per shape
-            for pl, on in p.get("platforms", {}).items():
-                f = next((f for f in (kit / f"{pl}.mp4", kit / f"{shapes.get(pl, 'portrait')}.mp4") if f.exists()), None)
-                if on and f:
-                    vids[pl] = f.name
-            pls = list(vids) if not st.get("tidied") else [pl for pl, on in p.get("platforms", {}).items() if on]
-            if not pls:
-                continue
-            out.append({"episode": name, "guest": st.get("guest") or name, "role": st.get("role", ""),
-                        "when": p["when"].replace(" ", "T"), "clip": p["clip"], "title": p.get("title", ""),
-                        "copy": dict(p.get("copy", {}), youtube_title=re.sub(r"\s*#\w+", "", p.get("copy", {}).get("youtube_title", "")).strip()),
-                        "platforms": pls, "dir": f"kit/{d}",
-                        "files": {pl: page(name, f"kit/{d}/{v}") for pl, v in vids.items()},
-                        "paths": {pl: f"kit/{d}/{v}" for pl, v in vids.items()}, "tidied": bool(st.get("tidied")),
-                        "covers": [page(name, f"kit/{d}/{c.name}") for c in sorted(kit.glob("cover *.png"))],
-                        "posted": posted.get(str(p["clip"]), {})})
-    return sorted(out, key=lambda p: p["when"])
-
 
 # ------------------------------------------------------------------ brand kits
 KIT_FIELDS = ("show", "host", "host_role", "about", "notes")
@@ -428,19 +396,8 @@ def save_kit(b):
     return {"name": name}
 
 
-def all_posted(wd):
-    """Every platform of every post in the kit ticked as posted on the calendar."""
-    if not (wd / "posts.json").exists():
-        return False
-    posts = json.loads((wd / "posts.json").read_text())["posts"]
-    posted = json.loads((wd / "posted.json").read_text()) if (wd / "posted.json").exists() else {}
-    posts = [p for p in posts if p.get("approved")] or posts
-    return bool(posts) and all(posted.get(str(p["clip"]), {}).get(pl) for p in posts
-                                for pl, on in p.get("platforms", {}).items() if on)
-
-
 def tidy(name, st):
-    """Once everything's posted: delete the episode's videos from Working files, keeping the zip (the one copy
+    """Once it's finished (and on Posting Desk): delete the episode's videos from Working files, keeping the zip (the one copy
     that's needed), the transcript, picks and captions, so it can still be remade from the source video."""
     wd = OUT / name
     z = episode_zip(name, st) or find_zip(name, st.get("guest"))
@@ -529,6 +486,19 @@ def alive(pid):
         return False
 
 
+def desk_job(name):
+    """Upload to Posting Desk (dokkpost.py desk), showing progress on the episode's card."""
+    st = load_state(name); st["uploading"] = True; st.pop("desk_error", None); save_state(name, st)
+    try:
+        run(name, [PY, "dokkpost.py", "desk", name])
+        notify(f"{st.get('guest') or name} is on Posting Desk")
+    except Exception as e:
+        st = load_state(name); st["desk_error"] = str(e); save_state(name, st)
+    finally:
+        st = load_state(name); st.pop("uploading", None); save_state(name, st)
+        jobs.pop(name, None)
+
+
 def start(name):
     if name in jobs:
         return
@@ -559,7 +529,9 @@ def episodes(logs=True):
         st["has_kit"] = (p.parent / "kit" / "kit.html").exists()
         st["kit_url"] = page(st["name"], "kit/kit.html")
         st["kit"] = st.get("kit") or DEFAULT_KIT
-        st["all_posted"] = all_posted(p.parent)
+        dj = p.parent / "desk.json"
+        if dj.exists():
+            d = json.loads(dj.read_text()); st["desk_link"], st["desk_failed"] = d.get("link"), d.get("failed")
         st["no_covers"] = st.get("status") == "done" and (p.parent / "kit").is_dir() and not any((p.parent / "kit").glob("*/cover *.png"))
         out.append(st)
     return out
@@ -693,6 +665,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, buf.getvalue(), "image/png")
         if u.path == "/sw.js":  # the installed app's helper: says so plainly when Offcuts isn't running
             return self.send(200, SW.encode(), "text/javascript")
+        if u.path == "/favicon.svg" and (ROOT / "assets/brand/offcuts-favicon.svg").exists():
+            return self.send_file(ROOT / "assets/brand/offcuts-favicon.svg")
         if u.path == "/logo" and studio().get("logo"):
             f = ROOT / studio()["logo"]
             kind = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(f.suffix.lower())
@@ -704,13 +678,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_file(KITS / k["name"] / k["logo"])
         if u.path == "/api/kits":
             return self.send(200, {"kits": kits(), "last": settings().get("kit") or DEFAULT_KIT})
-        if u.path == "/api/calendar":
-            return self.send(200, {"posts": calendar(), "upload": UPLOAD})
         if u.path == "/api/state":
             return self.send(200, {"episodes": episodes(), "next_start": next_start(), "auto_pick": bool(can_pick()),
                                   "mode": pick_mode(), "has_claude": bool(claude_cli()),
                                   "claude_ready": claude_ready() if pick_mode() == "mac" else None,
-                                  "has_key": bool(api_key())})
+                                  "has_key": bool(api_key()), "has_desk_key": bool(desk_key())})
         self.send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -794,6 +766,15 @@ class Handler(BaseHTTPRequestHandler):
                 st["photo"] = None; save_state(name, st); warning = str(e)
             start(name)
             return {"name": name, "warning": warning}
+        if path == "/api/desk-key":  # checked with the desk before it's kept, on this Mac only
+            try:
+                desk_call("GET", "/api/admin", key=b["key"].strip(), tries=1)
+            except SystemExit as e:
+                raise ValueError(f"that key didn't work: {e}")
+            p = Path.home() / ".dokkcast" / "desk_key"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(b["key"].strip()); p.chmod(0o600)
+            return {"ok": True}
         if path == "/api/home":  # the Offcuts folder, with Source files and Ready to post
             subprocess.run(["open", str(STUDIO or ROOT)])
             return {"ok": True}
@@ -817,11 +798,13 @@ class Handler(BaseHTTPRequestHandler):
             if b.get("go") and st.get("waiting") == "review" and name not in jobs:
                 st.update(step="finish", waiting=None); save_state(name, st); start(name)
             return {"ok": True}
-        if path == "/api/posted":  # a platform ticked as posted (or scheduled) on the calendar
-            f = OUT / name / "posted.json"
-            posted = json.loads(f.read_text()) if f.exists() else {}
-            posted.setdefault(str(b["clip"]), {})[b["platform"]] = bool(b.get("done"))
-            f.write_text(json.dumps(posted, indent=1))
+        if path == "/api/desk":  # upload the finished episode to Posting Desk, in the background
+            if name in jobs or st.get("status") != "done" or st.get("tidied"):
+                raise ValueError("only a finished episode whose videos are still here can go on Posting Desk")
+            if not desk_key():
+                raise ValueError("add the Posting Desk admin key first")
+            jobs[name] = threading.Thread(target=desk_job, args=(name,), daemon=True)
+            jobs[name].start()
             return {"ok": True}
         if path == "/api/reveal":  # show one of the episode's files in Finder, ready to drag into a website
             f = Path(os.path.normpath(OUT / name / b.get("path", "")))
@@ -832,8 +815,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/tidy":
             if name in jobs or st.get("status") != "done":
                 raise ValueError("this episode isn't finished yet")
-            if not all_posted(OUT / name):
-                raise ValueError("tick every post as Posted on the calendar first")
             freed = tidy(name, st)
             return {"ok": True, "freed_mb": round(freed / 1e6)}
         if path == "/api/cancel":  # stop the episode and put its working files in the Bin (the source video stays)
@@ -924,6 +905,10 @@ def main():
             refind_video(name, load_state(name))
         except Exception:
             pass
+    for name in [p.parent.name for p in OUT.glob("*/app.json")]:  # an upload cut off when Offcuts closed
+        st = load_state(name)
+        if st.get("uploading"):
+            st.pop("uploading"); st["desk_error"] = "Offcuts was closed during the upload: upload it again"; save_state(name, st)
     for name in [p.parent.name for p in OUT.glob("*/app.json")]:  # carry on with anything that was running
         if load_state(name).get("status") in ("running", "queued"):
             start(name)

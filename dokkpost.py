@@ -35,8 +35,8 @@ Copy lives in output/<name>/copy.json, written alongside the clips:
 Which clip shape each platform gets, the posting time zone and per-platform Postiz settings are in
 brand.json under "social". Needs the Postiz CLI (npm install -g postiz) and `postiz auth:login`.
 """
-import argparse, base64, json, os, re, shutil, subprocess, sys
-from datetime import date, datetime, timedelta
+import argparse, base64, json, os, re, shutil, subprocess, sys, time, uuid
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -417,6 +417,120 @@ def finish(name, brand, music=None, title=None):
     shutil.rmtree(wd / ".work", ignore_errors=True)  # the renders' in-between files: often a gigabyte or more
 
 
+# --------------------------------------------------------------- posting desk
+DESK_URL = os.environ.get("OFFCUTS_DESK_URL", "https://offcuts-posting-desk.netlify.app")
+DESK_ORDER = ["tiktok", "instagram", "youtube", "linkedin"]
+DESK_MAX, DESK_PART = 19_900_000, 3 * 1024 * 1024  # as the desk's own upload (desk/public/app.js addZip)
+
+
+def desk_key():
+    p = Path.home() / ".dokkcast" / "desk_key"
+    return os.environ.get("DESK_ADMIN_KEY") or (p.read_text().strip() if p.exists() else "")
+
+
+def desk_call(method, path, body=None, kind="application/json", key=None, base=None, tries=3):
+    import urllib.error, urllib.request
+    data = body if isinstance(body, (bytes, type(None))) else json.dumps(body).encode()
+    for n in range(1, tries + 1):
+        req = urllib.request.Request((base or DESK_URL) + path, data=data, method=method,
+                                     headers={"x-admin-key": key or desk_key(), "content-type": kind})
+        try:
+            with urllib.request.urlopen(req, timeout=120, context=ssl_context()) as r:
+                return json.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            msg = (json.loads(e.read() or b"{}") or {}).get("error") if e.headers.get_content_type() == "application/json" else None
+            if e.code == 403 or n == tries:
+                raise SystemExit(f"Posting Desk said {e.code}: {msg or e.reason}")
+        except OSError as e:
+            if n == tries:
+                raise SystemExit(f"couldn't reach Posting Desk: {e}")
+        time.sleep(1.5 * n)
+
+
+def ssl_context():
+    """HTTPS that works with a python.org Python too, which doesn't use the Mac's certificates."""
+    import ssl
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def desk_slug(s):
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(s).lower())
+    return re.sub(r"^-|-$", "", re.sub(r"[^a-z0-9]+", "-", s))[:60] or "episode"
+
+
+def desk_upload(name, base=None):
+    """Put the episode's posts and videos on Posting Desk, as adding its zip there does, and print its
+    private link (also kept in output/<name>/desk.json)."""
+    wd = work_dir(name)
+    kdir = wd / "kit"
+    if not (kdir / "kit.html").exists():
+        sys.exit("no kit yet: make the clips first")
+    if not desk_key():
+        sys.exit("no Posting Desk admin key yet: add it in Offcuts")
+    m = re.search(r"const D = (\{[\s\S]*?\});\s*\n\s*const NAMES", (kdir / "kit.html").read_text())
+    if not m:
+        sys.exit("kit.html doesn't have the posts in it: make the kit again")
+    D = json.loads(m.group(1))
+    zt = wd / "zip.txt"
+    title = Path(zt.read_text().strip()).stem if zt.exists() else D.get("episode") or name
+    shapes, jobs, by_shape, posts = D.get("shapes") or {}, {}, {}, []
+    for p in D.get("posts", []):
+        platforms = {}
+        for pl in DESK_ORDER:
+            given = (p.get("files") or {}).get(pl)
+            if not given:
+                continue
+            shape = shapes.get(pl, "")
+            cover, dk, key = f"{p['dir']}/cover {shape}.png", f"{p['dir']}/{shape}-desk.mp4", f"{p['dir']}|{shape}"
+            rel = by_shape.get(key) or (dk if (kdir / dk).exists() else given)
+            by_shape[key] = rel
+            jobs[rel] = "video/mp4"
+            has_cover = (kdir / cover).exists()
+            if has_cover:
+                jobs[cover] = "image/png"
+            platforms[pl] = {"shape": shape, "rel": rel, "coverRel": cover if has_cover else None,
+                             "caption": (p.get("copy") or {}).get(pl, ""),
+                             "title": (p.get("copy") or {}).get("youtube_title", "") if pl == "youtube" else ""}
+        posts.append({"clip": str(p["clip"]), "title": p.get("title", ""), "when": p["when"], "platforms": platforms})
+    ids, failed = {}, {}
+    for i, (rel, kind) in enumerate(jobs.items(), 1):
+        f = kdir / rel
+        if not f.exists():
+            failed[rel] = "This video wasn't in the kit."; continue
+        size = f.stat().st_size
+        if size > DESK_MAX:
+            failed[rel] = f"This video is {size / 1e6:.0f} MB, too big for the desk. Post it from the episode zip."; continue
+        fid, parts = uuid.uuid4().hex, []
+        with open(f, "rb") as fh:
+            for n, piece in enumerate(iter(lambda: fh.read(DESK_PART), b"")):
+                desk_call("PUT", f"/api/file/{fid}/part/{n}", piece, "application/octet-stream", base=base)
+                parts.append(len(piece))
+        desk_call("PUT", f"/api/file/{fid}/meta", {"type": kind, "size": size, "parts": parts}, base=base)
+        ids[rel] = fid
+        print(f"uploaded {i} of {len(jobs)}: {rel} ({size / 1e6:.1f} MB)", flush=True)
+    for p in posts:
+        for x in p["platforms"].values():
+            x["video"] = ids.get(x["rel"])
+            if not x["video"]:
+                x["missing"] = failed.get(x["rel"])
+            x["cover"] = ids.get(x["coverRel"]) if x["coverRel"] else None
+            del x["rel"], x["coverRel"]
+    r = desk_call("PUT", f"/api/episode/{desk_slug(D.get('episode') or title)}", {
+        "title": title, "episode": D.get("episode") or title, "tz": D.get("tz") or "Europe/London", "posts": posts,
+        "files": list(ids.values()), "addedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")}, base=base)
+    link = f"{base or DESK_URL}/?e={r['share']}"
+    (wd / "desk.json").write_text(json.dumps({"link": link, "at": datetime.now().isoformat(timespec="seconds"),
+                                              "posts": len(posts), "failed": len(failed)}, indent=1))
+    print(f"{title} is on Posting Desk: {len(posts)} posts" + (f", {len(failed)} files couldn't go up" if failed else "")
+          + f"\n{link}")
+    return link
+
+
 # -------------------------------------------------------------------- schedule
 def channels(brand, quiet=False):
     """Map each platform to a connected Postiz account: brand.json social.channels wins, else the only match."""
@@ -475,7 +589,7 @@ def schedule(name, brand, go=False):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["plan", "review", "apply", "kit", "zip", "finish", "channels", "schedule", "move-off"])
+    p.add_argument("command", choices=["plan", "review", "apply", "kit", "zip", "finish", "desk", "channels", "schedule", "move-off"])
     p.add_argument("target", nargs="?", help="the episode name (as in output/<name>)")
     p.add_argument("file", nargs="?", help="apply: posts.json saved from posts.html")
     p.add_argument("--start", help="plan: first posting day, YYYY-MM-DD (default tomorrow)")
@@ -504,6 +618,8 @@ def main():
         move_off(name, brand)
     elif a.command == "finish":
         finish(name, brand, a.music, a.title)
+    elif a.command == "desk":  # put it on Posting Desk for whoever posts
+        desk_upload(name)
     elif a.command == "channels":
         channels(brand)
     else:
