@@ -272,6 +272,33 @@ UPLOAD = {"tiktok": "https://www.tiktok.com/tiktokstudio/upload",
           "linkedin": "https://www.linkedin.com/feed/?shareActive=true"}
 
 
+DESK_MB = 19  # the shared posting page takes files up to 20 MB
+
+
+def desk(f):
+    """A copy under DESK_MB of a clip that's bigger, for the online posting page, which posts that exact
+    file: full size and frame rate, a two-pass bitrate that just fits. Goes in the kit as "<shape>-desk.mp4"."""
+    out = f.with_name(f"{f.stem}-desk.mp4")
+    if f.stat().st_size <= DESK_MB * 1e6:
+        return None
+    if out.exists() and out.stat().st_mtime >= f.stat().st_mtime:
+        return out
+    dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(f)],
+                               capture_output=True, text=True).stdout or 0)
+    if not dur:
+        return None
+    kbps = int((DESK_MB * 1e6 * 8 / dur - 128e3) * 0.95 / 1000)
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        log = str(Path(tmp) / "pass")
+        common = ["ffmpeg", "-v", "error", "-y", "-i", str(f), "-c:v", "libx264", "-b:v", f"{kbps}k",
+                  "-preset", "medium", "-pix_fmt", "yuv420p", "-passlogfile", log]
+        subprocess.run(common + ["-pass", "1", "-an", "-f", "mp4", os.devnull], check=True)
+        subprocess.run(common + ["-pass", "2", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)], check=True)
+    print(f"{out.name}: {out.stat().st_size / 1e6:.1f} MB for the posting page")
+    return out
+
+
 def kit(name, brand):
     """Folder per post with each platform's video and caption, plus kit.html, for posting by hand."""
     wd = work_dir(name)
@@ -307,6 +334,12 @@ def kit(name, brand):
                     os.link(src, dst)  # no extra disk space
                 except OSError:
                     shutil.copy2(src, dst)
+            dk = desk(src)  # made once next to the clip, then linked in like it
+            if dk and not (d / f"{shape}-desk.mp4").exists():
+                try:
+                    os.link(dk, d / f"{shape}-desk.mp4")
+                except OSError:
+                    shutil.copy2(dk, d / f"{shape}-desk.mp4")
             p["files"][pl] = f"{p['dir']}/{shape}.mp4"  # relative, so the kit still works when the folder is moved or synced
             cap = (f"Title: {p['copy'].get('youtube_title', '')}\n\n" if pl == "youtube" else "") + p["copy"][pl]
             (d / f"{pl}.txt").write_text(cap + "\n")
