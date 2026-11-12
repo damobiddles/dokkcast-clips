@@ -898,7 +898,7 @@ def main():
             "Brand kits       One folder per client or show: its logo and colours, made in Offcuts (Brand kits).\n"
             "Working files    Offcuts' own workings (transcripts, clips, covers). No need to open it.\n"
             "App              The program itself. Leave it be.\n\n"
-            "Day to day, open Offcuts: the Calendar shows each day's posts, ready to copy and drag in.\n")
+            "When an episode is finished, Upload to Posting Desk and send its link to whoever posts.\n")
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     for name in [p.parent.name for p in OUT.glob("*/app.json")]:  # videos moved into Source files since
         try:
