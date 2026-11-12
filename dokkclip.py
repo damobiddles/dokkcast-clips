@@ -301,24 +301,66 @@ def diarize(video, out_json, models, speakers=2):
     return turns
 
 
-def estimate_sides(video, band, turns):
-    """Which speaker sits left/right? The one whose turns coincide with more motion on the right."""
+def estimate_sides(video, band, turns, fps=5):
+    """Which speaker sits left/right? The one whose turns coincide with more motion on the right.
+    Reads the picture as a stream, so a whole episode needs no more memory than a clip."""
     import numpy as np
     cw, ch, cx, cy = band
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(video), "-vf",
-                          f"crop={cw}:{ch}:{cx}:{cy},fps=5,scale=160:90,format=gray", "-f", "rawvideo", "-"],
-                         capture_output=True, check=True).stdout
-    f = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 90, 160).astype(np.float32)
-    d = np.abs(np.diff(f, axis=0))
-    left, right = d[:, :, :80].mean((1, 2)), d[:, :, 80:].mean((1, 2))
-    share = right / (left + right + 1e-6)
+    proc = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(video), "-vf",
+                             f"crop={cw}:{ch}:{cx}:{cy},fps={fps},scale=160:90,format=gray", "-f", "rawvideo", "-"],
+                            stdout=subprocess.PIPE)
+    shares, prev, size = [], None, 160 * 90
+    while True:
+        buf = proc.stdout.read(size * 200)
+        if len(buf) < size:
+            break
+        f = np.frombuffer(buf[:len(buf) // size * size], dtype=np.uint8).reshape(-1, 90, 160).astype(np.int16)
+        if prev is not None:
+            f = np.concatenate([prev[None], f])
+        d = np.abs(np.diff(f, axis=0))
+        left, right = d[:, :, :80].mean((1, 2)), d[:, :, 80:].mean((1, 2))
+        shares.append(right / (left + right + 1e-6))
+        prev = f[-1]
+    proc.wait()
+    share = np.concatenate(shares) if shares else np.zeros(0)
+    t = (np.arange(len(share)) + 1) / fps
+    spks = sorted({x["spk"] for x in turns})
+    on = {spk: np.zeros(len(share), bool) for spk in spks}
+    for x in turns:  # which frames each speaker talks in
+        on[x["spk"]][np.searchsorted(t, x["s"]):np.searchsorted(t, x["e"])] = True
+    count = sum(m.astype(int) for m in on.values()) if on else np.zeros(len(share), int)
     score = {}
-    for spk in sorted({t["spk"] for t in turns}):
-        idx = [i for i in range(len(share)) if any(t["spk"] == spk and t["s"] <= (i + 1) / 5 < t["e"] for t in turns)
-               and not any(t["spk"] != spk and t["s"] <= (i + 1) / 5 < t["e"] for t in turns)]
-        score[spk] = float(share[idx].mean()) if idx else 0.5
+    for spk in spks:
+        only = on[spk] & (count == 1)  # frames where just this speaker talks
+        score[spk] = float(share[only].mean()) if only.any() else 0.5
     order = sorted(score, key=score.get)
     return {spk: ("left" if k < len(order) / 2 else "right") for k, spk in enumerate(order)}, score
+
+
+def talkers(turns, s, e, share=0.15):
+    """The speakers who really talk between s and e: at least this share of it, so a stray "yeah" (or a
+    voice the speaker detection mixed up) doesn't make a solo stretch a conversation."""
+    secs = {}
+    for t in turns:
+        secs[t["spk"]] = secs.get(t["spk"], 0) + max(0, min(e, t["e"]) - max(s, t["s"]))
+    total = sum(secs.values()) or 1
+    return sorted(k for k, v in secs.items() if v / total >= share) or sorted(secs)[:1]
+
+
+def episode_sides(video, turns, cache):
+    """Which speaker sits on which side, worked out once over the whole episode (more to go on than one
+    clip, where one speaker may barely talk) and kept in cache (the episode's sides.json)."""
+    cache = Path(cache)
+    if cache.exists():
+        try:
+            return {int(k): v for k, v in json.loads(cache.read_text()).items()}
+        except (ValueError, AttributeError):
+            pass
+    band = detect_crop(video)
+    sides, score = estimate_sides(video, tuple(map(int, band.split(":"))), turns)
+    print("speaker sides:", sides, {k: round(v, 2) for k, v in score.items()})
+    cache.write_text(json.dumps({str(k): v for k, v in sides.items()}))
+    return sides
 
 
 def camera_runs(turns, min_hold, step=0.1):
@@ -378,7 +420,7 @@ def layout_brand(brand, L):
     return b
 
 
-def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=None, frame=None):
+def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=None, frame=None, sides=None):
     """frame {"x": 0..1}: fill the whole canvas with the picture, its centre at x across it (set by dragging
     the preview on the review page), instead of the layout's own framing."""
     work.mkdir(parents=True, exist_ok=True)
@@ -412,7 +454,7 @@ def render(video, words_json, out_mp4, brand, work, layout="wide", turns_json=No
         ww = min(bw, round(bh * W / H / 2) * 2) if FOLLOW_FILL else L["window_width"]
         turns_json = Path(turns_json) if turns_json else ROOT / "output" / f"{Path(video).stem}.turns.json"
         turns = json.loads(turns_json.read_text()) if turns_json.exists() else diarize(video, turns_json, brand["models"])
-        sides = L["speaker_sides"]
+        sides = sides or L["speaker_sides"]
         if sides == "auto":
             sides, score = estimate_sides(video, (bw, bh, bx, by), turns)
             print("speaker sides (auto):", sides, {k: round(v, 2) for k, v in score.items()})

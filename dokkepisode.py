@@ -515,9 +515,13 @@ def render_clips(name, brand, only_id=None):
                     ct.append({"s": a, "e": b, "spk": t["spk"]})
         (cdir / f"{stem}.turns.json").write_text(json.dumps(ct or [{"s": 0, "e": dur, "spk": 0}], indent=1))
         for shape, layout in brand["clips"]["formats"].items():
-            layout, frame = framing(clip, shape, layout, len({t["spk"] for t in ct}))
+            layout, frame = framing(clip, shape, layout, len(dokkclip.talkers(ct, 0, dur)))
+            sides = None
+            if layout == "speaker" and brand["layouts"][layout].get("speaker_sides") == "auto":
+                sides = dokkclip.episode_sides(video, turns, wd / "sides.json")
+                sides = {k: v for k, v in sides.items() if k in {t["spk"] for t in ct}} or None
             dokkclip.render(src, cdir / f"{stem}.words.json", cdir / f"{stem}_{shape}.mp4", brand, work / "clip",
-                            layout, turns_json=cdir / f"{stem}.turns.json", frame=frame)
+                            layout, turns_json=cdir / f"{stem}.turns.json", frame=frame, sides=sides)
         print(f"clip {clip['id']} '{clip.get('title', '')}' ({dur:.0f}s) done")
 
 

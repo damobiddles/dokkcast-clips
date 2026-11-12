@@ -40,7 +40,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from dokkclip import FILL_LOGO, FOLLOW_FILL, LOGO_SIZE, READY, ROOT, STUDIO, day_off, layout_brand, load_brand
+from dokkclip import FILL_LOGO, FOLLOW_FILL, LOGO_SIZE, camera_runs, episode_sides, talkers, READY, ROOT, STUDIO, day_off, layout_brand, load_brand
 from dokkepisode import load_plan
 
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -161,11 +161,21 @@ def review(name, brand, music=None):
     words = json.loads((wd / "words.json").read_text()) if (wd / "words.json").exists() else []
     turns = json.loads((wd / "turns.json").read_text()) if (wd / "turns.json").exists() else []
     byid = {c["id"]: c for c in clips}
+    fl, sides = brand["layouts"].get("speaker", {}), None
+    plan_video = load_plan(wd).get("video")
     for p in data["posts"]:  # for the framing preview: who talks in it, how it's framed, and a line of its captions
         c = byid.get(p["clip"])
         if not c:
             continue
-        p["speakers"] = len({t["spk"] for t in turns if t["e"] > c["s"] and t["s"] < c["e"]}) or 1
+        who = talkers(turns, c["s"], c["e"]) if turns else []
+        p["speakers"] = len(who) or 1
+        if len(who) > 1 and fl.get("follow"):  # where Follow speaker points the camera, for the preview
+            if sides is None:
+                sides = episode_sides(plan_video, turns, wd / "sides.json") if fl.get("speaker_sides") == "auto" \
+                    else {int(k): v for k, v in fl["speaker_sides"].items()}
+            ct = [dict(t, s=max(t["s"], c["s"]) - c["s"], e=min(t["e"], c["e"]) - c["s"]) for t in turns
+                  if t["e"] > c["s"] and t["s"] < c["e"] and t["spk"] in who]
+            p["runs"] = [[round(a, 2), fl["speaker_x"][sides.get(spk, "left")]] for a, spk in camera_runs(ct, fl["min_hold"])]
         p["frame"] = c.get("frame") or {}
         p["sample"] = [w["w"] for w in words if c["s"] <= w["s"] < c["e"] and not re.match(r"[(\[]", w["w"])][:3]
     if ep.get("music") and Path(ep["music"]).exists() and mcfg.get("on", True):

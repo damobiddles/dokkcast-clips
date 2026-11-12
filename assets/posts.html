@@ -22,6 +22,7 @@
   .frame { position: relative; width: 100%; aspect-ratio: 9 / 16; background: #000; border-radius: 8px; overflow: hidden;
     container-type: inline-size; cursor: pointer; touch-action: none; user-select: none; }
   .frame video { position: absolute; background: #000; pointer-events: none; }
+  .frame.follow video { transition: left .5s ease-in-out; }
   .frame .logo { position: absolute; left: 50%; transform: translate(-50%, -50%); pointer-events: none; }
   .frame .cap { position: absolute; left: 4%; right: 4%; transform: translateY(-50%); text-align: center; pointer-events: none;
     font: 800 calc(var(--fs) * 100cqw) / 1.1 Manrope, system-ui, sans-serif; text-shadow: 0 0.6cqw 1cqw rgba(0,0,0,.6); }
@@ -154,6 +155,12 @@ function draw() {
       return modes().includes(m) ? m : "fit";
     };
     const filled = () => mode() === "fill" || (mode() === "auto" && !!L.follow_fill);  // the picture fills the frame
+    const followX = () => {  // the speaker's place across the picture now (p.runs: [seconds into the clip, x])
+      if (!p.runs || !p.runs.length) return null;
+      const t = v.currentTime - s0; let x = p.runs[0][1];
+      for (const [at, rx] of p.runs) if (at <= t) x = rx;
+      return x;
+    };
     const xpos = () => (p.frame[shape] || {}).x ?? 0.5;
     const showingMade = () => made[shape] && !reframed[shape];
     const mixing = () => !!(mus && mus.checked && !showingMade());
@@ -175,6 +182,7 @@ function draw() {
       cap.style.top = pct(g.cap_y, g.h); cap.style.setProperty("--fs", g.cap_size / g.w);
       cap.innerHTML = (p.sample || []).map((w, i) => i === 1 ? `<b style="color:${L.hi}">${esc(w)}</b>` : esc(w)).join(" ");
       cap.style.color = L.text; cap.classList.toggle("outlined", filled());
+      fr.classList.toggle("follow", mode() === "auto" && !showingMade());
       if (!over) { Object.assign(v.style, { left: 0, top: 0, width: "100%", height: "100%", objectFit: "contain" }); dims = null; }
       else {
         const vw = v.videoWidth || 16, vh = v.videoHeight || 9;
@@ -184,7 +192,10 @@ function draw() {
         else ww = vw;
         const W = vw * g.w / ww, H = vh * g.w / ww;  // the whole picture at that scale
         if (mode() === "fill") { left = Math.max(g.w - W, Math.min(0, g.w / 2 - xpos() * W)); top = (g.h - H) / 2; }
-        else if (mode() === "auto") { left = (g.w - W) / 2; top = L.follow_fill ? (g.h - H) / 2 : g.video_y - H / 2; }
+        else if (mode() === "auto") {  // centred on whoever's talking at this point, as the render pans
+          const fx = followX(), cx = fx == null ? (g.w - W) / 2 : g.w / 2 - fx * W;
+          left = Math.max(Math.min(0, g.w - W), Math.min(Math.max(0, g.w - W), cx)); top = L.follow_fill ? (g.h - H) / 2 : g.video_y - H / 2;
+        }
         else { left = 0; top = (g.h - H) / 2 + (g.offset || 0); }
         dims = { W, ww, vw, g };
         Object.assign(v.style, { left: pct(left, g.w), top: pct(top, g.h), width: pct(W, g.w), height: pct(H, g.h), objectFit: "fill" });
@@ -235,7 +246,9 @@ function draw() {
     };
     v.addEventListener("play", () => { fr.classList.add("playing"); document.querySelectorAll("video").forEach(o => o !== v && o.pause()); });
     v.addEventListener("pause", () => fr.classList.remove("playing"));
+    let lastX = null;
     v.addEventListener("timeupdate", () => {
+      if (mode() === "auto" && !showingMade() && followX() !== lastX) { lastX = followX(); layout(); }
       const f = showingMade() ? v.currentTime / (v.duration || 1) : (v.currentTime - s0) / ((s1 - s0) || 1);
       bar.style.width = Math.max(0, Math.min(100, f * 100)) + "%";
     });
