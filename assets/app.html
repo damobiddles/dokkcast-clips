@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offcuts</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --ok: #7be0a6; --warn: #ff8a8a; --wait: #ffd27a; --field: #0d1233; --button: #222a5c; --code: #070b22; --bw: 1px; --shadow: none; --radius: 10px; --scheme: dark; --head: inherit; --track: var(--line); }
+  * { box-sizing: border-box; }
+  body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--bg-image, none) var(--bg); }
+  body { margin: 0; background: var(--bg); position: relative; z-index: 0; min-height: 100vh; color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; color-scheme: var(--scheme); }
+  body.noise { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .38 0 0 0 0 .36 0 0 0 0 .33 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  header { padding: 18px 16px; border-bottom: 1px solid var(--line); }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 32px; line-height: 1.1; margin: 0; font-family: var(--head); }
+  .brand { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .brand img { height: 72px; width: auto; max-width: 300px; object-fit: contain; }
+  @media (max-width: 600px) { .brand img { height: 64px; } }
+  h2 { font-size: 16px; margin: 0 0 10px; font-family: var(--head); }
+  .sub { color: var(--dim); font-size: 13px; margin-top: 2px; }
+  main { padding: 0 16px 60px; }
+  .card { background: var(--panel); border: var(--bw) solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin: 16px 0; }
+  .grid { display: grid; grid-template-columns: 150px 1fr; gap: 10px 12px; align-items: center; }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+  .grid label { color: var(--dim); font-size: 14px; }
+  .pick { display: flex; gap: 8px; align-items: center; min-width: 0; flex-wrap: wrap; }
+  .pick select.src { max-width: 280px; }
+  .path { color: var(--dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .path.set { color: var(--text); }
+  input[type=text], input[type=date], input[type=password] { width: 100%; background: var(--field); color: var(--text); border: var(--bw) solid var(--line);
+    border-radius: 10px; padding: 7px 9px; font: inherit; font-size: 14px; color-scheme: var(--scheme); }
+  input:focus { outline: 2px solid var(--hi); outline-offset: 1px; }
+  button { background: var(--button); color: var(--text); border: var(--btn-bw, var(--bw)) solid var(--btn-line, var(--line)); border-radius: var(--btn-radius, 6px); padding: 7px 14px;
+    font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  button { transition: transform .12s, box-shadow .12s; }
+  button:hover { border-color: var(--hi); }
+  button.primary { background: var(--hi); color: var(--on-hi, #0A0F2C); border: var(--btn-bw, 0) solid var(--btn-line, transparent); font-weight: 700; padding: 9px 18px; font-family: var(--head); }
+  button.danger, .status .warn { color: var(--warn); }
+  .kitpick { font: inherit; padding: 7px 10px; border-radius: 8px; background: transparent; color: inherit; border: 1px solid currentColor; }
+  button.primary:hover { border-color: var(--btn-line, transparent); transform: translate(-2px, -2px); box-shadow: var(--btn-shadow, none); }
+  button:disabled { opacity: .5; cursor: default; }
+  .opt { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; flex-basis: 100%; cursor: pointer; }
+  .opt input { margin-top: 3px; accent-color: var(--hi); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 0 4px; }
+  .step { border-top: 3px solid var(--track); padding-top: 6px; font-size: 13px; color: var(--dim); }
+  .step.done { border-color: var(--ok); color: var(--text); }
+  .step.now { border-color: var(--hi); color: var(--text); font-weight: 600; }
+  .step.wait { border-color: var(--wait); color: var(--text); font-weight: 600; }
+  .step.err { border-color: var(--warn); color: var(--warn); font-weight: 600; }
+  .status { font-size: 14px; margin-top: 8px; }
+  .attn { border-color: var(--hi); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .attn[hidden] { display: none; }
+  .status.err { color: var(--warn); }
+  .ep-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .ep-head b { font-size: 16px; }
+  .dim { color: var(--dim); font-size: 13px; }
+  details { margin-top: 10px; }
+  details.more { margin: 0; }
+  details.more summary { list-style: none; display: inline-block; padding: 7px 14px; font-size: 13px; color: var(--dim);
+    border: var(--btn-bw, var(--bw)) solid var(--btn-line, var(--line)); border-radius: var(--btn-radius, 6px); }
+  details.more summary:hover { color: var(--text); border-color: var(--hi); }
+  details.more[open] summary { color: var(--text); }
+  details.more summary::-webkit-details-marker { display: none; }
+  details.more[open] { flex-basis: 100%; }
+  details.more .row { margin-top: 4px; }
+  summary { cursor: pointer; color: var(--dim); font-size: 13px; }
+  pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 12px; max-height: 220px;
+    overflow: auto; white-space: pre-wrap; margin: 6px 0 0; }
+  .spin { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--hi); border-right-color: transparent; border-radius: 50%;
+    animation: r 1s linear infinite; margin-right: 6px; }
+  @keyframes r { to { transform: rotate(360deg); } }
+  nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+  nav a { color: var(--dim); text-decoration: none; padding: 8px 14px; border-radius: var(--btn-radius, 8px); font-weight: 600; font-size: 14px; }
+  nav a:hover { color: var(--text); }
+  nav a.on { color: var(--on-hi); background: var(--hi); }
+  nav .n { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 99px; background: var(--wait); color: #111; font-size: 11px; text-align: center; }
+  .view[hidden], nav .n[hidden] { display: none; }
+  .how { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0 0; }
+  @media (max-width: 680px) { .how { grid-template-columns: 1fr; } }
+  .how div { background: var(--panel); border: var(--bw) solid var(--line); border-radius: var(--radius); padding: 12px 14px; font-size: 13px; color: var(--dim); }
+  .how b { display: block; color: var(--text); font-family: var(--head); font-size: 14px; margin-bottom: 2px; }
+  .wrap.wide { max-width: 1080px; }
+  .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 16px 0 4px; }
+  .seg { display: inline-flex; border: var(--btn-bw, 1px) solid var(--btn-line, var(--line)); border-radius: var(--btn-radius, 8px); overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; background: transparent; }
+  .seg button.on { background: var(--hi); color: var(--on-hi); }
+  select { background: var(--field); color: var(--text); border: var(--bw) solid var(--line); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 13px; }
+  .tag { font-size: 12px; padding: 1px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--dim); }
+  .tag.ok { border-color: var(--ok); color: var(--ok); }
+  button.copied { border-color: var(--ok); color: var(--ok); }
+  .empty { text-align: center; padding: 40px 16px; color: var(--dim); }
+  .kits { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin: 16px 0; }
+  .kit { background: var(--panel); border: var(--bw) solid var(--line); border-radius: var(--radius); padding: 10px; cursor: pointer; text-align: left; color: var(--text); font: inherit; }
+  .kit:hover, .kit.on { border-color: var(--hi); }
+  .kit b { display: block; margin-top: 8px; font-family: var(--head); font-size: 14px; }
+  .kit .dim { display: block; font-size: 12px; }
+  .kit.add { display: flex; align-items: center; justify-content: center; min-height: 120px; color: var(--dim); font-weight: 600; border-style: dashed; }
+  .mock { aspect-ratio: 9 / 16; border-radius: 8px; position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; }
+  .mock img { width: 36%; max-height: 22%; object-fit: contain; margin-top: 9%; }
+  .mock .vid { position: absolute; left: 0; right: 0; top: 30%; height: 33%; background: linear-gradient(135deg, #3a3b40, #222327); }
+  .mock .vid::after { content: ""; position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform: translate(-30%, -50%);
+    border-left: 14px solid rgba(255,255,255,.55); border-top: 9px solid transparent; border-bottom: 9px solid transparent; }
+  .mock .cap1 { position: absolute; top: 76%; left: 6%; right: 6%; text-align: center; font-weight: 800; font-size: 15px; line-height: 1.2; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+  .mock.small .cap1 { font-size: 11px; }
+  .kitform { display: grid; grid-template-columns: 1fr 220px; gap: 18px; }
+  @media (max-width: 680px) { .kitform { grid-template-columns: 1fr; } }
+  .swatches { display: flex; gap: 14px; flex-wrap: wrap; }
+  .swatches label { display: flex; gap: 6px; align-items: center; color: var(--dim); font-size: 13px; }
+  input[type=color] { width: 38px; height: 30px; border: var(--bw) solid var(--line); border-radius: 6px; background: var(--field); padding: 2px; cursor: pointer; }
+  textarea.small { width: 100%; background: var(--field); color: var(--text); border: var(--bw) solid var(--line); border-radius: 10px; padding: 7px 9px; font: inherit; font-size: 14px; min-height: 54px; }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--warn); color: #fff; padding: 8px 14px;
+    border-radius: 8px; font-weight: 600; display: none; max-width: 90vw; }
+</style>
+</head>
+<body>
+<header><div class="wrap wide brand">
+  <img id="logo" alt="" hidden>
+  <div><h1 id="name">Studio</h1><div class="sub" id="tagline"></div></div>
+  <nav><a href="#episodes" data-view="episodes">Episodes<span class="n" id="n-eps" hidden></span></a><a href="#new" data-view="new">New episode</a><a href="#kits" data-view="kits">Brand kits</a><a href="#settings" data-view="settings">Settings<span class="n" id="n-set" hidden>!</span></a><a href="#" id="home-folder" title="Source files, Ready to post and Working files">Offcuts folder</a></nav>
+</div></header>
+<main><div class="wrap wide">
+  <div class="card attn" id="attn" hidden></div>
+
+  <section class="view" id="v-episodes">
+    <div id="eps"></div>
+  </section>
+
+  <section class="view" id="v-kits" hidden>
+    <div class="how" style="grid-template-columns:1fr"><div><b>Brand kits</b>Each client or show has its own kit: the logo, colours, show name and host that go on its clips, covers and captions. Pick the kit when you start a new episode.</div></div>
+    <div class="kits" id="kit-list"></div>
+    <div class="card" id="kit-edit" hidden>
+      <h2 id="kit-title">New brand kit</h2>
+      <div class="kitform"><div class="grid">
+        <label>Kit name</label><input type="text" id="k-name" placeholder="The client or show, e.g. Acme Health">
+        <label>Show name</label><input type="text" id="k-show" placeholder="As it appears on the covers, e.g. The Acme Podcast">
+        <label>Logo</label><div class="pick"><button id="k-logo">Choose…</button><button id="k-nologo">No logo</button><span class="path" id="k-logo-p">None</span></div>
+        <label>Logo size</label><div class="pick"><input type="range" id="k-lsize" min="30" max="100" step="5" value="70"><span class="path set" id="k-lsize-p">70%</span></div>
+        <label>Colours</label><div class="swatches">
+          <label><input type="color" id="k-top"> Background top</label>
+          <label><input type="color" id="k-bottom"> Background bottom</label>
+          <label><input type="color" id="k-hi"> Highlight</label></div>
+        <label>Host</label><input type="text" id="k-host" placeholder="Optional, e.g. Dr. Jane Smith">
+        <label>Host's job</label><input type="text" id="k-role" placeholder="Optional">
+        <label>The show is</label><input type="text" id="k-about" placeholder="e.g. a podcast about small business">
+        <label>Notes for the captions</label><textarea class="small" id="k-notes" placeholder="Optional: tone, words to use or avoid, hashtags to include"></textarea>
+      </div>
+      <div><div class="mock" id="k-mock"><img alt="" hidden><div class="vid"></div><div class="cap1"></div></div>
+        <div class="dim" style="margin-top:6px">How a clip will look</div></div></div>
+      <div class="row"><button class="primary" id="k-save">Save brand kit</button><button id="k-cancel">Cancel</button></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-settings" hidden>
+  <div class="card" id="deskcard">
+    <h2>Posting Desk</h2>
+    <div class="dim" id="desk-has">Offcuts can upload finished episodes to Posting Desk. Paste the desk's admin key once; it's kept on this Mac only.</div>
+    <div class="row"><input type="password" id="deskkey" placeholder="Posting Desk admin key" style="flex:1;min-width:200px"><button id="savedeskkey">Save key</button></div>
+  </div>
+  <div class="card" id="keycard">
+    <h2>Clip picking</h2>
+    <div class="row" style="margin-top:0">
+      <label class="opt"><input type="radio" name="mode" value="mac"> Claude on this Mac (no extra cost): uses your own Claude account through Claude Code</label>
+      <label class="opt"><input type="radio" name="mode" value="chat"> Claude in chat: the app pauses after transcribing and you ask Claude to pick the clips</label>
+      <label class="opt"><input type="radio" name="mode" value="api"> Automatic: the app asks Claude itself (needs an Anthropic API key, about 30p an episode)</label>
+    </div>
+    <div id="macrow" class="dim" style="display:none;margin-top:10px">Claude Code isn't signed in on this Mac yet, so for now episodes wait for Claude in chat. To sign in once,
+      open Terminal, type <code>claude</code>, press Enter and sign in with your Claude account. (No claude there? First run
+      <code>curl -fsSL https://claude.ai/install.sh | bash</code>.)</div>
+    <div id="keyrow" style="display:none">
+      <div class="dim" style="margin-top:10px">Paste an Anthropic API key (console.anthropic.com, Settings, API keys). It's kept on this Mac only.</div>
+      <div class="row"><input type="password" id="key" placeholder="sk-ant-..." style="flex:1;min-width:200px"><button id="savekey">Save key</button></div>
+    </div>
+  </div>
+
+  </section>
+
+  <section class="view" id="v-new" hidden>
+  <div class="card">
+    <h2>New episode</h2>
+    <div class="grid">
+      <label>Brand kit</label><div class="pick"><select id="kit" style="flex:1;min-width:0"></select><button id="kit-new">New brand kit…</button></div>
+      <label>Episode video</label><div class="pick"><select class="src" data-src="video"></select><button data-choose="video">Choose…</button><span class="path" id="p-video">No file chosen</span></div>
+      <label>Music track</label><div class="pick"><select class="src" data-src="music"></select><button data-choose="music">Choose…</button><span class="path" id="p-music">None (no music)</span></div>
+      <label>Guest name</label><input type="text" id="guest" placeholder="e.g. Dr. Jane Smith">
+      <label>Guest's job</label><input type="text" id="role" placeholder="e.g. Founder, Acme Health">
+      <label>First post</label><input type="date" id="start">
+      <label>Guest photo</label><div class="pick"><button data-choose="photo">Choose…</button><span class="path" id="p-photo">Optional, for the covers</span></div>
+    </div>
+    <div class="row"><button class="primary" id="go">Start</button><span class="dim">Takes about 15 minutes, then the review opens here.</span><span class="dim" id="pickline"></span></div>
+  </div>
+  </section>
+</div></main>
+<div id="toast"></div>
+<script>
+// the studio's own look (brand.json "studio"); the clips keep each show's branding
+const STUDIO = /*STUDIO*/null;
+if (STUDIO) {
+  const c = STUDIO.colors || {}, r = document.documentElement.style;
+  const look = STUDIO.look || {};
+  for (const [k, v] of Object.entries({ bg: c.bg, panel: c.panel, line: c.line, text: c.text, dim: c.dim, hi: c.accent, "on-hi": c.on_accent,
+      field: c.field, button: c.button, track: c.track, code: c.code, ok: c.ok, warn: c.warn, wait: c.wait, "bg-image": look.bg_image,
+      bw: look.border, shadow: look.shadow, radius: look.radius, scheme: look.scheme, head: STUDIO.headline_font,
+      "btn-radius": look.button_radius, "btn-bw": look.button_border, "btn-line": c.button_line, "btn-shadow": look.button_shadow }))
+    if (v) r.setProperty("--" + k, v);
+  if (look.noise) document.body.classList.add("noise");  // the MBMS paper grain
+  if (STUDIO.fonts_css) { const f = document.createElement("link"); f.rel = "stylesheet"; f.href = STUDIO.fonts_css; document.head.appendChild(f); }
+  if (STUDIO.font) document.body.style.fontFamily = STUDIO.font;
+  document.title = STUDIO.name;
+  document.getElementById("name").textContent = STUDIO.name;
+  document.getElementById("tagline").textContent = STUDIO.tagline || "";
+  if (STUDIO.logo) { const l = document.getElementById("logo"); l.onload = () => l.hidden = false; l.src = "/logo"; }
+}
+const STEPS = [["prep", "Transcribe"], ["pick", "Pick clips"], ["review", "Review"], ["finish", "Clips, covers, zip"]];
+const pick = { video: null, music: null, photo: null };
+let state = null;
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const base = p => p ? p.split("/").pop() : "";
+
+function toast(msg, good) {
+  const t = document.getElementById("toast"); t.textContent = msg; t.style.display = "block";
+  t.style.background = good ? "var(--ok)" : "var(--warn)";
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.style.display = "none", 5000);
+}
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const j = await r.json();
+  if (!r.ok) { toast(j.error || "Something went wrong"); throw new Error(j.error); }
+  return j;
+}
+
+document.querySelectorAll("[data-choose]").forEach(b => b.onclick = async () => {
+  const kind = b.dataset.choose, { path } = await post("/api/choose", { kind });
+  if (!path) return;
+  pick[kind] = path;
+  const el = document.getElementById("p-" + kind); el.textContent = base(path); el.title = path; el.classList.add("set");
+});
+// the same files from a list of everything in Source files, subfolders included
+async function loadSources() {
+  let src; try { src = await (await fetch("/api/sources")).json(); } catch (e) { return; }
+  for (const kind of ["video", "music"]) {
+    const sel = document.querySelector(`select[data-src="${kind}"]`), was = pick[kind] || "";
+    const groups = new Map();
+    for (const f of src[kind]) { if (!groups.has(f.folder)) groups.set(f.folder, []); groups.get(f.folder).push(f); }
+    sel.innerHTML = `<option value="">${kind === "video" ? "From Source files…" : "From Source files (or none)…"}</option>` +
+      [...groups].map(([folder, fs]) => {
+        const opts = fs.map(f => `<option value="${esc(f.path)}" ${f.path === was ? "selected" : ""}>${esc(f.name)}</option>`).join("");
+        return folder ? `<optgroup label="${esc(folder)}">${opts}</optgroup>` : opts;
+      }).join("");
+    sel.hidden = !src[kind].length;
+  }
+}
+document.querySelectorAll("select[data-src]").forEach(sel => sel.onchange = () => {
+  const kind = sel.dataset.src, el = document.getElementById("p-" + kind);
+  pick[kind] = sel.value || null;
+  el.textContent = sel.value ? base(sel.value) : kind === "video" ? "No file chosen" : "None (no music)";
+  el.title = sel.value; el.classList.toggle("set", !!sel.value);
+});
+document.getElementById("go").onclick = async () => {
+  if (!pick.video) return toast("Choose the episode video first");
+  const { name, warning } = await post("/api/new", { kit: document.getElementById("kit").value, video: pick.video, music: pick.music, photo: pick.photo,
+    guest: document.getElementById("guest").value, role: document.getElementById("role").value,
+    start: document.getElementById("start").value });
+  pick.video = pick.music = pick.photo = null;
+  ["video", "music", "photo"].forEach(k => { const el = document.getElementById("p-" + k); el.classList.remove("set"); });
+  document.getElementById("p-video").textContent = "No file chosen";
+  document.getElementById("p-music").textContent = "None (no music)";
+  document.getElementById("p-photo").textContent = "Optional, for the covers";
+  document.querySelectorAll("select[data-src]").forEach(sel => sel.value = "");
+  ["guest", "role"].forEach(id => document.getElementById(id).value = "");
+  location.hash = "episodes";
+  await refresh();
+  if (warning) toast(`Started ${name}, but the photo didn't come through: ${warning}. Use Add guest photo on its card.`);
+  else toast(`Started ${name}. You'll see each step here; the review opens when it's ready.`, true);
+};
+document.querySelectorAll("input[name=mode]").forEach(r => r.onchange = async () => { await post("/api/mode", { pick: r.value }); refresh(); });
+document.getElementById("savekey").onclick = async () => {
+  const key = document.getElementById("key").value.trim();
+  if (!key) return;
+  await post("/api/key", { key }); document.getElementById("key").value = ""; refresh();
+};
+
+function stepClass(ep, i) {
+  const at = ep.step === "done" ? 4 : STEPS.findIndex(s => s[0] === ep.step);
+  if (i < at) return "done";
+  if (i > at) return "";
+  return ep.status === "error" ? "err" : ep.status === "waiting" ? "wait" : "now";
+}
+function deskLine(ep) {
+  if (ep.desk_error) return `<div class="status err">Posting Desk upload stopped: ${esc(ep.desk_error)}</div>`;
+  if (!ep.desk_link) return "";
+  return `<div class="status">On Posting Desk${ep.desk_failed ? ` (${ep.desk_failed} files too big: they say to post from the zip)` : ""}. Send this link to whoever posts:
+    <a href="${esc(ep.desk_link)}" target="_blank" rel="noopener">${esc(ep.desk_link)}</a></div>`;
+}
+function status(ep) {
+  if (ep.status === "error") return `<div class="status err">Stopped: ${esc(ep.error)}</div>`;
+  if (ep.uploading) return `<div class="status"><span class="spin"></span>Uploading to Posting Desk (a few minutes) …</div>`;
+  if (ep.status === "done" && ep.tidied) return `<div class="status">Tidied up: the videos are kept in the zip${ep.zip ? `, ${esc(base(ep.zip))}` : ""}.</div>` + deskLine(ep);
+  if (ep.status === "done") return `<div class="status">Done. The zip is ready${ep.zip ? `: ${esc(base(ep.zip))}` : ""}.` +
+    (ep.no_covers ? ` <span class="warn">It has no cover graphics: see Details for why.</span>` : "") + `</div>` + deskLine(ep);
+  if (ep.waiting === "picks") return state.auto_pick && state.claude_ready !== false
+    ? `<div class="status">Transcribed. Press <b>Continue</b> and Offcuts picks the clips itself.</div>`
+    : `<div class="status">Transcribed. Now tell Claude in chat: <b>pick the clips for ${esc(ep.name)}</b>. When Claude says they're in, press Continue.` +
+      (ep.pick_note === "signin" || (state.mode === "mac" && state.claude_ready === false) ? ` <span class="dim">(Offcuts can pick them itself once Claude Code is signed in: see <a href="#settings">Settings</a>.)</span>` : "") + `</div>`;
+  if (ep.waiting === "review") return `<div class="status">Your turn: open the review, watch the clips, set the music, edit the captions and tick Approve. Then press <b>Save and make the clips</b>.</div>`;
+  const what = { prep: "Transcribing and finding the speakers (about 10 minutes)", pick: "Claude is picking the clips and writing the captions",
+    review: "Planning the posting dates and building the review page", finish: "Rendering the clips with music, covers, kit and zip (about 20 minutes)" }[ep.step];
+  return `<div class="status"><span class="spin"></span>${what || "Working"} …</div>`;
+}
+function actions(ep) {
+  const b = [], more = [];
+  if (ep.status === "error") b.push(`<button data-act="continue">Try again</button>`);
+  if (ep.waiting === "picks") b.push(`<button class="primary" data-act="continue">Continue</button>`);
+  if (ep.waiting === "review") b.push(`<button class="primary" data-go="${esc(ep.review_url)}">Open the review</button>`);
+  if (ep.waiting === "review" && ep.has_kit) b.push(`<button data-act="keep">Keep the clips already made</button>`);
+  if (ep.status === "done" && !ep.uploading && !ep.tidied) b.push(`<button class="${ep.desk_link ? "" : "primary"}" data-act="desk">${ep.desk_link ? "Upload again" : "Upload to Posting Desk"}</button>`);
+  if (ep.desk_link) b.push(`<button class="primary" data-copylink="${esc(ep.desk_link)}">Copy the link</button>`);
+  if (ep.status === "done") b.push(`<button data-act="open" data-what="zip">Show zip in Finder</button>`);
+  if (ep.status === "done") more.push(`<button data-act="reopen">Change and remake</button>`);
+  if (ep.status === "done" && !ep.tidied && !ep.uploading) more.push(`<button data-act="tidy">Tidy up</button>`);
+  if (!ep.running && ep.status !== "done") more.push(`<button data-act="photo">${ep.photo || ep.photo_set ? "Change" : "Add"} guest photo</button>`);
+  if (!ep.running && !ep.tidied && !ep.uploading) more.push(`<button data-act="rebrand">Change brand</button>`);
+  more.push(`<button data-act="open" data-what="folder">Open folder</button>`);
+  if (ep.status !== "done") more.push(`<button class="danger" data-act="cancel">Cancel project</button>`);
+  return b.join("") + `<details class="more" data-more="${esc(ep.name)}"><summary>More</summary><div class="row">${more.join("")}</div></details>`;
+}
+function draw() {
+  document.querySelectorAll("input[name=mode]").forEach(r => r.checked = r.value === state.mode);
+  document.getElementById("desk-has").textContent = state.has_desk_key ?
+    "The admin key is saved: finished episodes have an Upload to Posting Desk button. Paste a new key here to change it." :
+    "Offcuts can upload finished episodes to Posting Desk. Paste the desk's admin key once; it's kept on this Mac only.";
+  document.getElementById("keyrow").style.display = state.mode === "api" && !state.has_key ? "block" : "none";
+  const signin = state.mode === "mac" && state.claude_ready === false;
+  document.getElementById("macrow").style.display = signin ? "block" : "none";
+  document.getElementById("n-set").hidden = !signin && !(state.mode === "api" && !state.has_key);
+  document.getElementById("pickline").textContent = state.auto_pick && !signin ? "" : " Clip picking: Claude in chat (change it in Settings).";
+  const s = document.getElementById("start"); if (!s.value) s.value = state.next_start;
+  // whatever is waiting on you goes at the top, so it isn't missed under the form
+  const need = state.episodes.filter(ep => ep.status === "waiting" || ep.status === "error");
+  const attn = document.getElementById("attn");
+  attn.hidden = !need.length;
+  attn.innerHTML = need.map(ep => `<b>${esc(ep.guest || ep.name)}</b><span>${ep.status === "error" ? "stopped" :
+    ep.waiting === "picks" ? "is ready for you to press Continue" : "is ready to review"}</span>
+    <button class="primary" data-show="${esc(ep.name)}">Show me</button>`).join("<br>");
+  attn.querySelectorAll("[data-show]").forEach(b => b.onclick = () => {
+    location.hash = "episodes";
+    setTimeout(() => {
+      const card = [...document.querySelectorAll("#eps .card")].find(c => c.dataset.name === b.dataset.show);
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  });
+  const n = document.getElementById("n-eps"); n.hidden = !need.length; n.textContent = need.length;
+  if (!state.episodes.length) document.getElementById("eps").innerHTML = "";
+  const box = document.getElementById("eps");
+  const open = new Set([...box.querySelectorAll("details[open]")].map(d => d.dataset.name || "more:" + d.dataset.more));
+  box.innerHTML = state.episodes.map(ep => `<div class="card" data-name="${esc(ep.name)}">
+      <div class="ep-head"><b>${esc(ep.guest || ep.name)}</b><span class="dim">${esc(ep.role || "")}</span><span class="tag">${esc(ep.kit)}</span>
+        <span class="dim" style="margin-left:auto">${esc(base(ep.video))}${ep.music ? " · " + esc(base(ep.music)) : ""}</span></div>
+      <div class="steps">${STEPS.map((st, i) => `<div class="step ${stepClass(ep, i)}">${st[1]}</div>`).join("")}</div>
+      ${status(ep)}
+      <div class="row">${actions(ep)}</div>
+      <details data-name="${esc(ep.name)}" ${open.has(ep.name) ? "open" : ""}><summary>Details</summary><pre>${esc(ep.log || "Nothing yet")}</pre></details>
+    </div>`).join("");
+  if (!state.episodes.length) box.innerHTML = `<div class="empty">No episodes yet. <a href="#new">Start one</a>.</div>`;
+  box.querySelectorAll("details.more").forEach(d => { if (open.has("more:" + d.dataset.more)) d.open = true; });
+  box.querySelectorAll("[data-go]").forEach(b => b.onclick = () => location.href = b.dataset.go);
+  box.querySelectorAll("[data-copylink]").forEach(b => b.onclick = () => copy(b, b.dataset.copylink));
+  box.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
+    const name = b.closest(".card").dataset.name, act = b.dataset.act;
+    const ep = state.episodes.find(e => e.name === name);
+    if (act === "reopen" && !confirm("Go back to the review? Making the clips again takes about 20 minutes" +
+        (ep && ep.tidied ? " and needs the episode video in Source files." : ". You can still keep the ones already made."))) return;
+    if (act === "desk" && !state.has_desk_key) {
+      toast("Add the Posting Desk admin key first (Settings)"); location.hash = "settings"; return;
+    }
+    if (act === "desk" && ep.desk_link && !confirm("Upload it again? The link stays the same, and the ticks people made are kept.")) return;
+    if (act === "tidy") {
+      if (!confirm("Delete this episode's videos from Working files? The zip in Ready to post keeps them all, and the " +
+          "captions and picks stay, so it can be remade from the episode video if ever needed.")) return;
+      const { freed_mb } = await post("/api/tidy", { name });
+      toast(`Tidied up: ${freed_mb >= 1000 ? (freed_mb / 1000).toFixed(1) + " GB" : freed_mb + " MB"} freed`, true);
+      return refresh();
+    }
+    if (act === "cancel") {
+      if (!confirm(`Cancel ${ep.guest || name}? It stops, and its working files go to the Bin (you can put them back from there). ` +
+          "The episode video stays in Source files.")) return;
+      await post("/api/cancel", { name });
+      toast("Cancelled: its working files are in the Bin", true);
+      return refresh();
+    }
+    if (act === "rebrand") {
+      const { kits } = await (await fetch("/api/kits")).json();
+      const row = b.closest(".row");
+      row.innerHTML = `<select class="kitpick">${kits.map(k => `<option ${k.name === ep.kit ? "selected" : ""}>${esc(k.name)}</option>`).join("")}</select>
+        <button class="primary" data-ok>Use this brand</button><button data-no>Keep the current one</button>`;
+      paused = true;  // until a choice is made, or a minute passes, so updates don't stop for good
+      const resume = setTimeout(() => { paused = false; refresh(); }, 60000);
+      row.querySelector("[data-no]").onclick = () => { clearTimeout(resume); paused = false; lastState = null; refresh(); };
+      row.querySelector("[data-ok]").onclick = async () => {
+        const kit = row.querySelector(".kitpick").value;
+        clearTimeout(resume); paused = false;
+        if (kit === ep.kit) { lastState = null; return refresh(); }
+        const r = await post("/api/rebrand", { name, kit });
+        toast(r.remake ? `Now ${kit}. Press Change and remake to make the clips with it.` :
+          `Now ${kit}. The captions were written for ${ep.kit}, so give them a read in the review.`, true);
+        refresh();
+      };
+      return;
+    }
+    if (act === "photo") {
+      const { path } = await post("/api/choose", { kind: "photo" });
+      if (path) await post("/api/set", { name, photo: path });
+    } else {
+      await post("/api/" + act, { name, what: b.dataset.what });
+    }
+    refresh();
+  });
+}
+let seen = null;  // each episode's state at the last look, to notice when one becomes ready to review
+let paused = false;
+let lastState = null;  // while a choice is open on a card, so the next refresh doesn't wipe it
+async function refresh() {
+  if (paused) return;
+  try {
+    const text = await (await fetch("/api/state")).text();
+    if (text === lastState) return;  // nothing changed: leave the page as it is (a half-done click, selected text)
+    lastState = text; state = JSON.parse(text);
+    const ready = state.episodes.find(ep => ep.waiting === "review" && seen && seen[ep.name] && seen[ep.name] !== "review");
+    seen = Object.fromEntries(state.episodes.map(ep => [ep.name, ep.waiting || ep.status]));
+    // straight on to the review when it's ready, unless something else is being filled in
+    if (ready && (location.hash || "#episodes") === "#episodes") return location.href = ready.review_url;
+    draw();
+  }
+  catch (e) { lastState = null; document.getElementById("eps").innerHTML = `<div class="card status err">The app has stopped. Open ${esc(STUDIO ? STUDIO.name : 'the app')} again.</div>`; }
+}
+async function copy(btn, text) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { const t = document.createElement("textarea"); t.value = text; document.body.appendChild(t); t.select(); document.execCommand("copy"); t.remove(); }
+  const was = btn.textContent; btn.textContent = "Copied"; btn.classList.add("copied");
+  setTimeout(() => { btn.textContent = was; btn.classList.remove("copied"); }, 1200);
+}
+document.getElementById("home-folder").onclick = e => { e.preventDefault(); post("/api/home"); };
+document.getElementById("savedeskkey").onclick = async () => {
+  const k = document.getElementById("deskkey");
+  if (!k.value.trim()) return;
+  await post("/api/desk-key", { key: k.value.trim() });
+  k.value = ""; toast("Posting Desk key saved", true); refresh();
+};
+
+// ------------------------------------------------------------------ the views
+function show() {
+  const v = (location.hash || "#episodes").slice(1);
+  const view = ["episodes", "new", "kits", "settings"].includes(v) ? v : "episodes";
+  if (view === "kits" || view === "new") loadKits();
+  if (view === "new") loadSources();
+  document.querySelectorAll(".view").forEach(s => s.hidden = s.id !== "v-" + view);
+  document.querySelectorAll("nav a").forEach(a => a.classList.toggle("on", a.dataset.view === view));
+  window.scrollTo(0, 0);
+}
+// ---------------------------------------------------------------- brand kits
+let KITS = [], editing = null, kitLogo = null;
+function mock(el, k, logoUrl) {
+  const c = k.colors || {};
+  el.style.background = `linear-gradient(${c.top || "#111214"}, ${c.bottom || "#26272B"})`;
+  const img = el.querySelector("img");
+  if (logoUrl) { img.src = logoUrl; img.hidden = false; } else { img.removeAttribute("src"); img.hidden = true; }
+  img.style.width = (36 * (k.logo_size || 70) / 100) + "%";
+  el.querySelector(".cap1").innerHTML = `This is how the <span style="color:${esc(c.highlight || "#F2C94C")}">captions</span> look`;
+}
+async function loadKits(keep) {
+  const r = await (await fetch("/api/kits")).json();
+  KITS = r.kits;
+  const sel = document.getElementById("kit"), was = keep || sel.value || r.last;
+  sel.innerHTML = KITS.map(k => `<option value="${esc(k.name)}">${esc(k.name)}</option>`).join("");
+  sel.value = KITS.some(k => k.name === was) ? was : (KITS[0] || {}).name || "";
+  const list = document.getElementById("kit-list");
+  list.innerHTML = KITS.map(k => `<button class="kit ${editing && editing.name === k.name ? "on" : ""}" data-kit="${esc(k.name)}">
+      <div class="mock small"><img alt="" hidden><div class="vid"></div><div class="cap1"></div></div>
+      <b>${esc(k.name)}</b><span class="dim">${esc(k.host ? "with " + k.host : k.show || "")}</span></button>`).join("") +
+    `<button class="kit add" data-kit="">+ New brand kit</button>`;
+  list.querySelectorAll("[data-kit]").forEach(b => {
+    const k = KITS.find(x => x.name === b.dataset.kit);
+    if (k) mock(b.querySelector(".mock"), k, k.logo_url);
+    b.onclick = () => editKit(k || null);
+  });
+}
+function editKit(k) {
+  editing = k; kitLogo = null;
+  const f = id => document.getElementById(id), c = (k && k.colors) || {};
+  f("kit-edit").hidden = false;
+  f("kit-title").textContent = k ? "Edit " + k.name : "New brand kit";
+  f("k-name").value = k ? k.name : ""; f("k-name").disabled = !!k;
+  f("k-show").value = k ? k.show || "" : "";
+  f("k-host").value = k ? k.host || "" : ""; f("k-role").value = k ? k.host_role || "" : "";
+  f("k-about").value = k ? k.about || "" : "a podcast"; f("k-notes").value = k ? k.notes || "" : "";
+  f("k-top").value = c.top || "#111214"; f("k-bottom").value = c.bottom || "#26272B"; f("k-hi").value = c.highlight || "#F2C94C";
+  f("k-logo-p").textContent = k && k.logo_url ? "Kept: " + k.logo : "None"; f("k-logo-p").classList.toggle("set", !!(k && k.logo_url));
+  f("k-logo-p").dataset.none = "";
+  f("k-lsize").value = (k && k.logo_size) || 70;
+  drawMock();
+  loadKits();
+  f("kit-edit").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function drawMock() {
+  const f = id => document.getElementById(id);
+  const none = f("k-logo-p").dataset.none === "1";
+  const url = kitLogo ? "/media" + kitLogo : (!none && editing && editing.logo_url) || null;
+  f("k-lsize-p").textContent = f("k-lsize").value + "%";
+  mock(f("k-mock"), { colors: { top: f("k-top").value, bottom: f("k-bottom").value, highlight: f("k-hi").value }, logo_size: +f("k-lsize").value }, url);
+}
+["k-top", "k-bottom", "k-hi", "k-lsize"].forEach(id => document.getElementById(id).oninput = drawMock);
+document.getElementById("k-logo").onclick = async () => {
+  const { path } = await post("/api/choose", { kind: "logo" });
+  if (!path) return;
+  kitLogo = path; const p = document.getElementById("k-logo-p");
+  p.textContent = base(path); p.classList.add("set"); p.dataset.none = ""; drawMock();
+};
+document.getElementById("k-nologo").onclick = () => {
+  kitLogo = null; const p = document.getElementById("k-logo-p");
+  p.textContent = "None"; p.classList.remove("set"); p.dataset.none = "1"; drawMock();
+};
+document.getElementById("k-cancel").onclick = () => { editing = null; document.getElementById("kit-edit").hidden = true; loadKits(); };
+document.getElementById("k-save").onclick = async () => {
+  const f = id => document.getElementById(id).value;
+  const body = { name: f("k-name"), new: !editing, show: f("k-show"), host: f("k-host"), host_role: f("k-role"),
+    about: f("k-about"), notes: f("k-notes"), colors: { top: f("k-top"), bottom: f("k-bottom"), highlight: f("k-hi") },
+    logo_size: +f("k-lsize"), logo: kitLogo, no_logo: document.getElementById("k-logo-p").dataset.none === "1" };
+  const { name } = await post("/api/kit", body);
+  toast(`Saved the ${name} brand kit`, true);
+  editing = null; document.getElementById("kit-edit").hidden = true;
+  await loadKits(name);
+  if (kitFromNew) { kitFromNew = false; location.hash = "new"; }
+};
+let kitFromNew = false;
+document.getElementById("kit-new").onclick = () => { kitFromNew = true; location.hash = "kits"; setTimeout(() => editKit(null), 50); };
+
+window.onhashchange = show;
+if ("serviceWorker" in navigator)  // the old installed-app helper, no longer needed now Offcuts has its own window
+  navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())).catch(() => {});
+show();
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

@@ -1,4 +1,20 @@
 {
+  "studio": {
+    "name": "Offcuts",
+    "tagline": "by MBMS Podcast Studio · one episode in, a month of marketing out",
+    "logo": "assets/brand/offcuts-icon.svg",
+    "icon": "assets/brand/offcuts-icon.png",
+    "fonts_css": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap",
+    "font": "Inter, system-ui, sans-serif",
+    "headline_font": "Poppins, Inter, sans-serif",
+    "colors": {"bg": "#0B0B0D", "panel": "#18191Ccc", "line": "#2C2D32", "text": "#F2F1EE", "dim": "#A3A4A9", "track": "#2C2D32",
+               "accent": "#EDEBE6", "on_accent": "#111214", "field": "#101113", "button": "#232428", "button_line": "#3A3B40",
+               "code": "#08080A", "ok": "#7BE0A6", "warn": "#FF8A8A", "wait": "#FFD27A"},
+    "look": {"border": "1px", "shadow": "none", "radius": "12px", "button_radius": "8px", "button_border": "1px",
+             "button_shadow": "none", "scheme": "dark", "noise": false,
+             "bg_image": "radial-gradient(70% 55% at 12% 0%, rgba(120,122,130,.20), transparent 70%), radial-gradient(60% 50% at 95% 100%, rgba(90,92,100,.16), transparent 70%), linear-gradient(160deg, #1C1D21 0%, #121316 45%, #0A0A0C 100%)"}
+  },
+  "show": {"name": "The Dokkcast", "kicker": "The Dokkcast", "zip": "Dokkcast posts"},
   "canvas": {
     "width": 1080,
     "height": 1920,
@@ -48,6 +64,141 @@
       "min_hold": 0.8,
       "lead": 0.15,
       "pan_seconds": 0.5
+    },
+    "square": {
+      "follow": false,
+      "crop": "auto",
+      "video_y_offset": -10,
+      "canvas": {
+        "width": 1080,
+        "height": 1080
+      },
+      "captions": {
+        "size": 62,
+        "max_chars": 28
+      },
+      "logo": {
+        "width": 200
+      },
+      "logo_center_y": 125,
+      "captions_center_y": 960
+    },
+    "landscape": {
+      "follow": false,
+      "crop": "auto",
+      "video_y_offset": 0,
+      "canvas": {
+        "width": 1920,
+        "height": 1080
+      },
+      "captions": {
+        "size": 66,
+        "max_chars": 34,
+        "shadow": 3,
+        "outline": 3
+      },
+      "logo": {
+        "width": 150
+      },
+      "logo_x": "W-w-56",
+      "logo_center_y": 125,
+      "captions_center_y": 950
+    }
+  },
+  "clips": {
+    "formats": {
+      "portrait": "speaker",
+      "square": "square"
+    },
+    "music": {
+      "on": true,
+      "level_db": -12,
+      "duck_ratio": 2,
+      "fade": 1.0,
+      "offset_step": 30
+    }
+  },
+  "episode": {
+    "pause_max": 1.0,
+    "pause_keep": 0.4,
+    "fillers": [
+      "um",
+      "uh",
+      "uhm",
+      "umm",
+      "erm",
+      "er",
+      "ah",
+      "hmm",
+      "mm"
+    ],
+    "audio": "highpass=f=80,afftdn=nr=10:nf=-40:tn=1,deesser=i=0.3,acompressor=threshold=0.1:ratio=3:attack=10:release=150:makeup=2,loudnorm=I=-16:TP=-1.5:LRA=11",
+    "music": {
+      "dir": "assets/music",
+      "level_db": -24,
+      "intro_seconds": 20,
+      "outro_seconds": 20,
+      "fade": 3
+    },
+    "lower_third_seconds": 6,
+    "video": [
+      "-c:v",
+      "libx264",
+      "-crf",
+      "18",
+      "-preset",
+      "fast"
+    ],
+    "spellings": {
+      "doc cast": "Dokkcast",
+      "dock cast": "Dokkcast",
+      "dokcast": "Dokkcast",
+      "docast": "Dokkcast",
+      "u dock": "udokk",
+      "you dock": "udokk",
+      "dot cast": "Dokkcast",
+      "marston": "Marsden",
+      "marlston": "Marsden",
+      "sana banerjee": "Susana Banerjee",
+      "guiney": "gynae",
+      "gynic": "gynae"
+    }
+  },
+  "social": {
+    "platforms": [
+      "tiktok",
+      "instagram",
+      "youtube",
+      "linkedin"
+    ],
+    "shapes": {
+      "tiktok": "portrait",
+      "instagram": "portrait",
+      "youtube": "portrait",
+      "linkedin": "square"
+    },
+    "tz": "Europe/London",
+    "time": "12:00",
+    "days": "mon,tue,wed,thu,fri", "off": [["12-24", "01-01"]],
+    "channels": {},
+    "settings": {
+      "tiktok": {
+        "privacy_level": "PUBLIC_TO_EVERYONE",
+        "content_posting_method": "DIRECT_POST",
+        "duet": false,
+        "stitch": false,
+        "comment": true,
+        "autoAddMusic": "no",
+        "brand_content_toggle": false,
+        "brand_organic_toggle": false
+      },
+      "instagram": {
+        "post_type": "post"
+      },
+      "youtube": {
+        "type": "public"
+      },
+      "linkedin": {}
     }
   }
 }

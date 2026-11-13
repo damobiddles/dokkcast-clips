@@ -1,0 +1,13 @@
+{
+ "show": "MBMS Podcast Studio",
+ "host": "",
+ "host_role": "",
+ "about": "a podcast",
+ "notes": "",
+ "colors": {
+  "top": "#17161C",
+  "bottom": "#2A2830",
+  "highlight": "#FF5A36"
+ },
+ "logo": "logo.svg"
+}

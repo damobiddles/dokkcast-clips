@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><svg x="100" y="100" width="824" height="824" viewBox="0 0 64 64">
+  <defs>
+    <clipPath id="top"><path d="M0 0H64V25L0 41Z"/></clipPath>
+    <clipPath id="bot"><path d="M0 41L64 25V64H0Z"/></clipPath>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#1b1d20"/>
+  <g clip-path="url(#top)" transform="translate(-1.5 -2)"><circle cx="32" cy="33" r="15" fill="none" stroke="#f1efe9" stroke-width="4"/></g>
+  <g transform="translate(1.5 2.5)"><g clip-path="url(#bot)"><circle cx="32" cy="33" r="17" fill="#5fcf95"/></g></g>
+</svg></svg>

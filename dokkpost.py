@@ -1,0 +1,563 @@
+#!/usr/bin/env python3
+"""Posts: plan the posting dates, review and approve the clips, make the posting kit and zip, and put
+it on Posting Desk.
+
+    python dokkpost.py plan Marcela                 # posts.json from the clips + copy.json, one clip per posting day
+    python dokkpost.py plan Marcela --start 2026-11-02 --time 12:00 --days mon,wed,fri
+    python dokkpost.py review Marcela --music ~/Movies/track.wav   # posts.html: framing, music level, captions, Approve
+    python dokkpost.py apply Marcela ~/Downloads/posts.json   # take the choices saved from posts.html
+    python dokkpost.py finish Marcela --music ~/Movies/track.wav   # render approved clips, covers, kit, zip
+    python dokkpost.py kit Marcela                  # just the posting kit: output/Marcela/kit/
+    python dokkpost.py zip Marcela                  # just the zip, in Ready to post
+    python dokkpost.py desk Marcela                 # upload it to Posting Desk and print its private link
+    python dokkpost.py move-off Marcela             # move posts off days off (brand.json social "off", e.g. Christmas)
+
+The review page works before the clips are rendered too: until a clip file exists it plays that
+stretch of the episode instead. Clips left unapproved are marked skip in plan.json by apply, so
+finish only renders the approved ones. The music level saved from the page is what the clips are
+rendered with (plan.json "music_db").
+
+Copy lives in output/<name>/copy.json, written by dokkpick.py:
+
+    {"1": {"tiktok": "...", "instagram": "...", "linkedin": "...", "youtube_title": "...", "youtube": "..."}}
+
+Which clip shape each platform gets, the posting days, time and time zone are in brand.json "social".
+"""
+import argparse, base64, json, os, re, shutil, subprocess, sys, time, uuid
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+
+from dokkclip import FILL_LOGO, FOLLOW_FILL, LOGO_SIZE, camera_runs, episode_sides, talkers, READY, ROOT, STUDIO, day_off, layout_brand, load_brand
+from dokkepisode import load_plan
+
+DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def work_dir(name):
+    return ROOT / "output" / name
+
+
+# ------------------------------------------------------------------------ plan
+def plan(name, brand, start=None, at=None, days=None):
+    wd = work_dir(name)
+    social = brand["social"]
+    clips = [c for c in json.loads((wd / "plan.json").read_text()).get("clips", []) if not c.get("skip")]
+    copy = json.loads((wd / "copy.json").read_text()) if (wd / "copy.json").exists() else {}
+    days = [DAYS.index(d.strip()[:3].lower()) for d in (days or social["days"]).split(",")]
+    at = at or social["time"]
+    d = date.fromisoformat(start) if start else date.today() + timedelta(days=1)
+    old = {p["clip"]: p for p in json.loads((wd / "posts.json").read_text())["posts"]} if (wd / "posts.json").exists() else {}
+    posts = []
+    for c in clips:
+        while d.weekday() not in days or day_off(d, social):  # posting days only, none over Christmas
+            d += timedelta(days=1)
+        cp = copy.get(str(c["id"]), {})
+        text = {p: cp.get(p) or c.get("title", "") for p in social["platforms"]}
+        if "youtube" in text:
+            text["youtube_title"] = cp.get("youtube_title") or c.get("title", "")
+        # keep what was already approved or sent if plan is run again
+        posts.append(old.get(c["id"]) or {"clip": c["id"], "title": c.get("title", ""), "when": f"{d} {at}",
+                                          "platforms": {p: True for p in social["platforms"]}, "copy": text,
+                                          "approved": False, "sent": {}})
+        d += timedelta(days=1)
+    (wd / "posts.json").write_text(json.dumps({"episode": name, "tz": social["tz"], "posts": posts}, indent=1))
+    missing = [str(c["id"]) for c in clips if str(c["id"]) not in copy]
+    print(f"{len(posts)} posts -> {wd / 'posts.json'}" + (f" (no copy yet for clips {', '.join(missing)})" if missing else ""))
+    review(name, brand)
+
+
+# ---------------------------------------------------------------------- review
+def studio_page(html, brand):
+    """Give a page the studio's look and name (brand.json "studio"), with its logo inside the page so a
+    zipped kit still shows it. The clips and covers keep the show's own branding."""
+    st = dict(brand.get("studio", {}))
+    logo = ROOT / st.get("logo", "")
+    if st.get("logo") and logo.is_file():
+        kind = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg"}.get(logo.suffix.lower())
+        if kind:
+            st["logo_data"] = f"data:{kind};base64," + base64.b64encode(logo.read_bytes()).decode()
+    theme = (ROOT / "assets" / "studio-theme.html").read_text().replace("/*STUDIO*/null", json.dumps(st) if st else "null")
+    return html.replace("<!--STUDIO-->", theme)
+
+
+def loudness(path):
+    """Integrated loudness (LUFS) of a file's audio."""
+    r = subprocess.run(["ffmpeg", "-nostats", "-i", str(path), "-vn", "-af", "ebur128", "-f", "null", "-"],
+                       capture_output=True, text=True)
+    m = re.findall(r"I:\s+(-?[\d.]+) LUFS", r.stderr)
+    return float(m[-1]) if m else -16.0
+
+
+def music_preview(wd, ep):
+    """The track at the episode's own loudness, so the page's slider sets music against voice in dB
+    the same way the render does (both are normalised to the same level there)."""
+    out = wd / "music-preview.m4a"
+    key = f"{ep['music']}|{ep.get('voice_lufs')}"
+    if not out.exists() or ep.get("music_preview") != key:
+        if ep.get("voice_lufs") is None:
+            print("measuring the episode's loudness for the music preview ...")
+            ep["voice_lufs"] = loudness(ep["video"])
+            key = f"{ep['music']}|{ep['voice_lufs']}"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", ep["music"], "-vn", "-ac", "1", "-af",
+                        f"loudnorm=I={ep['voice_lufs']:.1f}:TP=-2", "-c:a", "aac", "-b:a", "96k", str(out)], check=True)
+        ep["music_preview"] = key
+        (wd / "plan.json").write_text(json.dumps(ep, indent=1))
+    return out.name
+
+
+def review(name, brand, music=None):
+    wd = work_dir(name)
+    data = json.loads((wd / "posts.json").read_text())
+    ep = load_plan(wd)
+    if music:
+        ep["music"] = str(Path(music).expanduser().resolve())
+        (wd / "plan.json").write_text(json.dumps(ep, indent=1))
+    clips = ep.get("clips", [])
+    spans = {c["id"]: (c["s"], c["e"]) for c in clips}
+    mcfg = dict(brand["episode"]["music"], **brand["clips"].get("music", {}))
+    for p in data["posts"]:
+        p["files"] = {}
+        if p["clip"] in spans:  # that stretch of the episode, for the music preview and unrendered clips
+            s, e = spans[p["clip"]]
+            p["src"] = f"{Path(ep['video']).as_uri()}#t={s:.1f},{e:.1f}"
+            # where in the track this clip's music starts, as render_clips does it
+            p["music_at"] = [c["id"] for c in clips].index(p["clip"]) * mcfg.get("offset_step", 30)
+        for pl, shape in brand["social"]["shapes"].items():
+            f = wd / "clips" / f"{name}_clip{p['clip']}_{shape}.mp4"
+            if f.exists():
+                p["files"][pl] = f.as_uri()
+            elif "src" in p:  # not rendered yet: play that stretch of the episode
+                p["files"][pl] = p["src"]
+    data["shapes"] = brand["social"]["shapes"]
+    data["look"] = look(brand)
+    words = json.loads((wd / "words.json").read_text()) if (wd / "words.json").exists() else []
+    turns = json.loads((wd / "turns.json").read_text()) if (wd / "turns.json").exists() else []
+    byid = {c["id"]: c for c in clips}
+    fl, sides = brand["layouts"].get("speaker", {}), None
+    plan_video = load_plan(wd).get("video")
+    for p in data["posts"]:  # for the framing preview: who talks in it, how it's framed, and a line of its captions
+        c = byid.get(p["clip"])
+        if not c:
+            continue
+        who = talkers(turns, c["s"], c["e"]) if turns else []
+        p["speakers"] = len(who) or 1  # who really talks: two of them start on Follow speaker, one on Fill
+        everyone = talkers(turns, c["s"], c["e"], share=0) if turns else []
+        p["can_follow"] = len(everyone) > 1  # Follow speaker is offered whenever both are heard at all
+        who = who if len(who) > 1 else everyone
+        if len(who) > 1 and fl.get("follow"):  # where Follow speaker points the camera, for the preview
+            if sides is None:
+                sides = episode_sides(plan_video, turns, wd / "sides.json") if fl.get("speaker_sides") == "auto" \
+                    else {int(k): v for k, v in fl["speaker_sides"].items()}
+            ct = [dict(t, s=max(t["s"], c["s"]) - c["s"], e=min(t["e"], c["e"]) - c["s"]) for t in turns
+                  if t["e"] > c["s"] and t["s"] < c["e"] and t["spk"] in who]
+            p["runs"] = [[round(a, 2), fl["speaker_x"][sides.get(spk, "left")]] for a, spk in camera_runs(ct, fl["min_hold"])]
+        p["frame"] = c.get("frame") or {}
+        p["sample"] = [w["w"] for w in words if c["s"] <= w["s"] < c["e"] and not re.match(r"[(\[]", w["w"])][:3]
+    if ep.get("music") and Path(ep["music"]).exists() and mcfg.get("on", True):
+        data["music"] = {"src": music_preview(wd, ep), "name": Path(ep["music"]).stem,
+                         "db": ep["music_db"] if ep.get("music_db") is not None else mcfg["level_db"]}
+    html = (ROOT / "assets" / "posts.html").read_text().replace("/*POSTS*/null", json.dumps(data))
+    (wd / "posts.html").write_text(studio_page(html, brand))
+    print(f"open {wd / 'posts.html'} in a browser")
+
+
+def look(brand):
+    """What the review page needs to draw each shape roughly as the render will: the brand's colours and logo,
+    and per shape where the logo, picture and captions go (the shape's own layout, and the one for one person
+    or a still picture)."""
+    logo = brand["logo"].get("file")
+    f = Path(logo) if logo and Path(logo).is_absolute() else ROOT / (logo or "")
+    kind = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(f.suffix.lower())
+    out = {"top": brand["canvas"]["bg_top"], "bottom": brand["canvas"]["bg_bottom"],
+           "text": brand["captions"]["color"], "hi": brand["captions"]["highlight"],
+           "logo": f"data:{kind};base64," + base64.b64encode(f.read_bytes()).decode() if logo and kind and f.is_file() else None,
+           "shapes": {}, "fill_logo": FILL_LOGO, "follow_fill": FOLLOW_FILL}
+
+    def geo(name):
+        L = brand["layouts"][name]; b = layout_brand(brand, L)
+        return {"w": b["canvas"]["width"], "h": b["canvas"]["height"], "logo_y": L["logo_center_y"],
+                "logo_w": b["logo"]["width"] * b["logo"].get("scale", LOGO_SIZE / 100), "cap_y": L["captions_center_y"], "cap_size": b["captions"]["size"],
+                "follow": bool(L.get("follow")), "window": L.get("window_width"), "video_y": L.get("video_center_y"),
+                "offset": L.get("video_y_offset", 0)}
+    for shape, layout in brand["clips"]["formats"].items():
+        out["shapes"][shape] = {"own": geo(layout), "still": geo("wide" if layout == "speaker" else layout)}
+    return out
+
+
+def apply(name, brand, path):
+    """Take the approvals and copy edits saved from posts.html. Posts already sent are left alone."""
+    wd = work_dir(name)
+    cur = json.loads((wd / "posts.json").read_text())
+    frames = {}  # clip -> {shape: {"mode", "x"}}, set by dragging on the review page
+    new = {p["clip"]: p for p in json.loads(Path(path).expanduser().read_text())["posts"]}
+    for p in cur["posts"]:
+        n = new.get(p["clip"])
+        if n:
+            p.update({k: n[k] for k in ("platforms", "copy", "approved") if k in n})
+            try:  # a cleared or garbled date keeps the one planned
+                datetime.fromisoformat(n.get("when") or "")
+                p["when"] = n["when"]
+            except ValueError:
+                pass
+            if "frame" in n:
+                frames[p["clip"]] = n["frame"]
+    (wd / "posts.json").write_text(json.dumps(cur, indent=1))
+    ok = [p for p in cur["posts"] if p["approved"]]
+    pj = wd / "plan.json"
+    ep = json.loads(pj.read_text())
+    if ok:  # only the approved clips get rendered
+        keep = {p["clip"] for p in ok}
+        for c in ep.get("clips", []):
+            c["skip"] = c["id"] not in keep
+    for c in ep.get("clips", []):
+        f = frames.get(c["id"])
+        if f is not None and f != (c.get("frame") or {}):
+            c["frame"] = f
+            for old in (wd / "clips").glob(f"{name}_clip{c['id']}_*.mp4"):  # made with the old framing
+                old.unlink()
+    saved = json.loads(Path(path).expanduser().read_text()).get("music_db")
+    if saved is not None:
+        ep["music_db"] = saved
+        print(f"music level {saved} dB")
+    pj.write_text(json.dumps(ep, indent=1))
+    print(f"{len(ok)} of {len(cur['posts'])} posts approved: clips {', '.join(str(p['clip']) for p in ok) or 'none'}")
+    review(name, brand)
+
+
+def move_off(name, brand):
+    """Move posts that fall on a day off (brand.json social "off") to the next free posting days after
+    it, keeping one post a day across all episodes. Then remake the kit, as its folders carry the dates."""
+    wd, social = work_dir(name), brand["social"]
+    days = [DAYS.index(d.strip()[:3].lower()) for d in social["days"].split(",")]
+    data = json.loads((wd / "posts.json").read_text())
+    taken = {p["when"][:10] for pj in (ROOT / "output").glob("*/posts.json") for p in json.loads(pj.read_text())["posts"]}
+    moved = 0
+    for p in sorted(data["posts"], key=lambda p: p["when"]):
+        d = date.fromisoformat(p["when"][:10])
+        if not day_off(d, social):
+            continue
+        while d.weekday() not in days or day_off(d, social) or d.isoformat() in taken:
+            d += timedelta(days=1)
+        print(f"clip {p['clip']}: {p['when'][:10]} -> {d}")
+        taken.add(d.isoformat())
+        p["when"] = d.isoformat() + p["when"][10:]
+        moved += 1
+    if not moved:
+        print("no posts on days off")
+        return
+    (wd / "posts.json").write_text(json.dumps(data, indent=1))
+    if (wd / "kit").is_dir():
+        kit(name, brand)
+
+
+# ------------------------------------------------------------------------- kit
+UPLOAD = {"tiktok": "https://www.tiktok.com/tiktokstudio/upload",
+          "instagram": "https://business.facebook.com/latest/composer",
+          "youtube": "https://studio.youtube.com",
+          "linkedin": "https://www.linkedin.com/feed/?shareActive=true"}
+
+
+DESK_MB = 19  # the shared posting page takes files up to 20 MB
+
+
+def desk(f):
+    """A copy under DESK_MB of a clip that's bigger, for the online posting page, which posts that exact
+    file: full size and frame rate, a two-pass bitrate that just fits. Goes in the kit as "<shape>-desk.mp4"."""
+    out = f.with_name(f"{f.stem}-desk.mp4")
+    if f.stat().st_size <= DESK_MB * 1e6:
+        return None
+    if out.exists() and out.stat().st_mtime >= f.stat().st_mtime:
+        return out
+    dur = float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(f)],
+                               capture_output=True, text=True).stdout or 0)
+    if not dur:
+        return None
+    kbps = int((DESK_MB * 1e6 * 8 / dur - 128e3) * 0.95 / 1000)
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        log = str(Path(tmp) / "pass")
+        common = ["ffmpeg", "-v", "error", "-y", "-i", str(f), "-c:v", "libx264", "-b:v", f"{kbps}k",
+                  "-preset", "medium", "-pix_fmt", "yuv420p", "-passlogfile", log]
+        subprocess.run(common + ["-pass", "1", "-an", "-f", "mp4", os.devnull], check=True)
+        subprocess.run(common + ["-pass", "2", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(out)], check=True)
+    print(f"{out.name}: {out.stat().st_size / 1e6:.1f} MB for the posting page")
+    return out
+
+
+def kit(name, brand):
+    """Folder per post with each platform's video and caption, plus kit.html, for posting by hand."""
+    wd = work_dir(name)
+    data = json.loads((wd / "posts.json").read_text())
+    posts = [p for p in data["posts"] if p["approved"]] or data["posts"]
+    clip = lambda p, pl: wd / "clips" / f"{name}_clip{p['clip']}_{brand['social']['shapes'][pl]}.mp4"
+    made = [p for p in posts if any(on and clip(p, pl).exists() for pl, on in p["platforms"].items())]
+    if not made:  # e.g. tidied away since: keep the kit there is rather than leave none
+        sys.exit("none of these clips have been made (or they were tidied away), so the kit stays as it is")
+    for p in posts:
+        if p not in made:
+            print(f"clip {p['clip']} hasn't been made, so it's left out of the kit")
+    posts = made
+    out = wd / "kit"
+    shutil.rmtree(out, ignore_errors=True)
+    for p in posts:
+        day = datetime.fromisoformat(p["when"])
+        p["dir"] = f"{day:%Y-%m-%d %a} clip{p['clip']}"
+        d = out / p["dir"]
+        d.mkdir(parents=True)
+        p["files"] = {}
+        text = []
+        for pl, on in p["platforms"].items():
+            if not on:
+                continue
+            shape, src = brand["social"]["shapes"][pl], clip(p, pl)
+            if not src.exists():
+                print(f"clip {p['clip']} has no {shape} video, so it's left off {pl}")
+                continue
+            dst = d / f"{shape}.mp4"  # one video per shape: TikTok, Instagram and YouTube share the portrait one
+            if not dst.exists():
+                try:
+                    os.link(src, dst)  # no extra disk space
+                except OSError:
+                    shutil.copy2(src, dst)
+            dk = desk(src)  # made once next to the clip, then linked in like it
+            if dk and not (d / f"{shape}-desk.mp4").exists():
+                try:
+                    os.link(dk, d / f"{shape}-desk.mp4")
+                except OSError:
+                    shutil.copy2(dk, d / f"{shape}-desk.mp4")
+            p["files"][pl] = f"{p['dir']}/{shape}.mp4"  # relative, so the kit still works when the folder is moved or synced
+            cap = (f"Title: {p['copy'].get('youtube_title', '')}\n\n" if pl == "youtube" else "") + p["copy"][pl]
+            (d / f"{pl}.txt").write_text(cap + "\n")
+            text.append(f"== {pl} ==\n{cap}\n")
+        (d / "captions.txt").write_text("\n".join(text))
+        for shape in sorted(set(brand["social"]["shapes"].values())):  # cover graphics, if dokkgraphics made them
+            g = wd / "graphics" / f"{name}_clip{p['clip']}_{shape}.png"
+            if g.exists():
+                shutil.copy2(g, d / f"cover {shape}.png")
+    social = brand["social"]  # a how-to for whoever does the posting (e.g. an intern), in the folder they get
+    days = ", ".join(d.strip()[:3].capitalize() for d in social["days"].split(","))
+    days = "weekdays" if days == "Mon, Tue, Wed, Thu, Fri" else days
+    (out / "How to post.txt").write_text((ROOT / "assets" / "how-to-post.txt").read_text().format(
+        show=brand["show"]["name"], days=days, time=social["time"],
+        tz="UK time" if social["tz"] == "Europe/London" else social["tz"]))
+    data["posts"], data["upload"], data["shapes"] = posts, UPLOAD, brand["social"]["shapes"]
+    (out / "kit.html").write_text(studio_page((ROOT / "assets" / "kit.html").read_text().replace("/*POSTS*/null", json.dumps(data)), brand))
+    print(f"{len(posts)} posts{'' if any(p['approved'] for p in posts) else ' (none approved yet, so all of them)'}"
+          f" -> {out}\nopen {out / 'kit.html'} in a browser")
+
+
+def make_zip(name, title=None, brand=None):
+    """The kit as one zip for Slack, with real files (not links) inside."""
+    wd = work_dir(name)
+    if not (wd / "kit").exists():  # a zip stopped halfway leaves the kit under the zip's name: put it back
+        left = [d for d in wd.glob("* - *") if d.is_dir() and (d / "kit.html").exists()]
+        if len(left) == 1:
+            left[0].rename(wd / "kit")
+    if not (wd / "kit" / "kit.html").exists():
+        sys.exit(f"no kit yet: run `dokkpost.py kit {name}` first")
+    if not title:
+        speakers = load_plan(wd).get("speakers", {}).values()
+        guest = next((w["name"] for w in speakers if w.get("name") and "host" not in w.get("role", "").lower()), name)
+        title = re.sub(r"^(Dr|Prof|Professor|Mr|Mrs|Ms|Miss)\.?\s+", "", guest)
+    out = READY if READY.is_dir() or STUDIO else wd  # Ready to post (or ~/Movies/Dokkcast); next to the kit otherwise
+    out.mkdir(parents=True, exist_ok=True)
+    z = out / f"{((brand or {}).get('show') or {}).get('zip', 'Dokkcast posts')} - {title}.zip"
+    mine = (wd / "zip.txt").read_text().strip() if (wd / "zip.txt").exists() else None
+    if z.exists() and str(z) != mine:  # another episode's zip (same show and guest): never write over it
+        z = z.with_name(f"{z.stem} ({name}).zip")
+    z.unlink(missing_ok=True)
+    # inside the zip the folder has the zip's own name, so it unzips to "<show> posts - <guest>", not "kit"
+    named = wd / z.stem
+    if named.exists():
+        raise SystemExit(f"{named} is in the way of making the zip: move it out of the episode folder")
+    (wd / "kit").rename(named)
+    try:
+        if shutil.which("ditto"):
+            subprocess.run(["ditto", "-c", "-k", "--keepParent", str(named), str(z)], check=True)
+        else:
+            shutil.make_archive(str(z.with_suffix("")), "zip", wd, named.name)
+    finally:
+        named.rename(wd / "kit")
+    (wd / "zip.txt").write_text(str(z))  # so the app knows which zip is this episode's
+    print(f"{z} ({z.stat().st_size / 1e6:.0f} MB)")
+    return z
+
+
+def finish(name, brand, music=None, title=None):
+    """After approval: render the approved clips (with music), make graphics, then the kit and the zip."""
+    wd = work_dir(name)
+    cmd = [sys.executable, str(ROOT / "dokkepisode.py"), "render", name, "--only", "clips"]
+    subprocess.run(cmd + (["--music", music] if music else []), check=True)
+    g = ROOT / "dokkgraphics.py"
+    if g.exists():
+        # the covers name the guest: whichever speaker isn't the host (the speaker numbers vary by episode)
+        host = brand.get("pick", {}).get("host", "")  # from the brand kit
+        speakers = load_plan(wd).get("speakers", {})
+        guest = next((k for k, v in speakers.items()
+                      if v.get("name") != host and v.get("role", "").lower() != "host"), None)
+        if subprocess.run([sys.executable, str(g), name] + (["--guest", guest] if guest else [])).returncode:
+            print("graphics failed; carrying on without covers")
+    kit(name, brand)
+    make_zip(name, title, brand)
+    shutil.rmtree(wd / ".work", ignore_errors=True)  # the renders' in-between files: often a gigabyte or more
+
+
+# --------------------------------------------------------------- posting desk
+DESK_URL = os.environ.get("OFFCUTS_DESK_URL", "https://offcuts-posting-desk.netlify.app")
+DESK_ORDER = ["tiktok", "instagram", "youtube", "linkedin"]
+DESK_MAX, DESK_PART = 19_900_000, 3 * 1024 * 1024  # as the desk's own upload (desk/public/app.js addZip)
+
+
+def desk_key():
+    p = Path.home() / ".dokkcast" / "desk_key"
+    return os.environ.get("DESK_ADMIN_KEY") or (p.read_text().strip() if p.exists() else "")
+
+
+def desk_call(method, path, body=None, kind="application/json", key=None, base=None, tries=3):
+    import urllib.error, urllib.request
+    data = body if isinstance(body, (bytes, type(None))) else json.dumps(body).encode()
+    for n in range(1, tries + 1):
+        req = urllib.request.Request((base or DESK_URL) + path, data=data, method=method,
+                                     headers={"x-admin-key": key or desk_key(), "content-type": kind})
+        try:
+            with urllib.request.urlopen(req, timeout=120, context=ssl_context()) as r:
+                return json.loads(r.read() or b"{}")
+        except urllib.error.HTTPError as e:
+            msg = (json.loads(e.read() or b"{}") or {}).get("error") if e.headers.get_content_type() == "application/json" else None
+            if e.code < 500 or n == tries:  # a refusal (bad key, a clash) won't change by trying again
+                raise SystemExit(f"Posting Desk said {e.code}: {msg or e.reason}")
+        except OSError as e:
+            if n == tries:
+                raise SystemExit(f"couldn't reach Posting Desk: {e}")
+        time.sleep(1.5 * n)
+
+
+def ssl_context():
+    """HTTPS that works with a python.org Python too, which doesn't use the Mac's certificates."""
+    import ssl
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def desk_slug(s):
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(s).lower())
+    return re.sub(r"^-|-$", "", re.sub(r"[^a-z0-9]+", "-", s))[:60] or "episode"
+
+
+def desk_upload(name, base=None):
+    """Put the episode's posts and videos on Posting Desk, as adding its zip there does, and print its
+    private link (also kept in output/<name>/desk.json)."""
+    wd = work_dir(name)
+    kdir = wd / "kit"
+    if not (kdir / "kit.html").exists():
+        sys.exit("no kit yet: make the clips first")
+    if not desk_key():
+        sys.exit("no Posting Desk admin key yet: add it in Offcuts")
+    m = re.search(r"const D = (\{[\s\S]*?\});\s*\n\s*const NAMES", (kdir / "kit.html").read_text())
+    if not m:
+        sys.exit("kit.html doesn't have the posts in it: make the kit again")
+    D = json.loads(m.group(1))
+    zt = wd / "zip.txt"
+    title = Path(zt.read_text().strip()).stem if zt.exists() else D.get("episode") or name
+    shapes, jobs, by_shape, posts = D.get("shapes") or {}, {}, {}, []
+    for p in D.get("posts", []):
+        platforms = {}
+        for pl in DESK_ORDER:
+            given = (p.get("files") or {}).get(pl)
+            if not given:
+                continue
+            shape = shapes.get(pl, "")
+            cover, dk, key = f"{p['dir']}/cover {shape}.png", f"{p['dir']}/{shape}-desk.mp4", f"{p['dir']}|{shape}"
+            rel = by_shape.get(key) or (dk if (kdir / dk).exists() else given)
+            by_shape[key] = rel
+            jobs[rel] = "video/mp4"
+            has_cover = (kdir / cover).exists()
+            if has_cover:
+                jobs[cover] = "image/png"
+            platforms[pl] = {"shape": shape, "rel": rel, "coverRel": cover if has_cover else None,
+                             "caption": (p.get("copy") or {}).get(pl, ""),
+                             "title": (p.get("copy") or {}).get("youtube_title", "") if pl == "youtube" else ""}
+        posts.append({"clip": str(p["clip"]), "title": p.get("title", ""), "when": p["when"], "platforms": platforms})
+    ids, failed, todo = {}, {}, []
+    for rel, kind in jobs.items():
+        f = kdir / rel
+        if not f.exists():
+            failed[rel] = "This video wasn't in the kit."
+        elif f.stat().st_size > DESK_MAX:
+            failed[rel] = f"This video is {f.stat().st_size / 1e6:.0f} MB, too big for the desk. Post it from the episode zip."
+        else:
+            todo.append((rel, kind))
+
+    def send(job):
+        rel, kind = job
+        f, fid, parts = kdir / rel, uuid.uuid4().hex, []
+        with open(f, "rb") as fh:
+            for n, piece in enumerate(iter(lambda: fh.read(DESK_PART), b"")):
+                desk_call("PUT", f"/api/file/{fid}/part/{n}", piece, "application/octet-stream", base=base)
+                parts.append(len(piece))
+        desk_call("PUT", f"/api/file/{fid}/meta", {"type": kind, "size": sum(parts), "parts": parts}, base=base)
+        return rel, fid, sum(parts)
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(4) as pool:  # a few files at once: much quicker than one after another
+        for i, (rel, fid, size) in enumerate(pool.map(send, todo), 1):
+            ids[rel] = fid
+            print(f"uploaded {i} of {len(todo)}: {rel} ({size / 1e6:.1f} MB)", flush=True)
+    for p in posts:
+        for x in p["platforms"].values():
+            x["video"] = ids.get(x["rel"])
+            if not x["video"]:
+                x["missing"] = failed.get(x["rel"])
+            x["cover"] = ids.get(x["coverRel"]) if x["coverRel"] else None
+            del x["rel"], x["coverRel"]
+    r = desk_call("PUT", f"/api/episode/{desk_slug(title)}", {
+        "title": title, "episode": D.get("episode") or title, "tz": D.get("tz") or "Europe/London", "posts": posts,
+        "files": list(ids.values()), "addedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")}, base=base)
+    link = f"{base or DESK_URL}/?e={r['share']}"
+    (wd / "desk.json").write_text(json.dumps({"link": link, "at": datetime.now().isoformat(timespec="seconds"),
+                                              "posts": len(posts), "failed": len(failed)}, indent=1))
+    print(f"{title} is on Posting Desk: {len(posts)} posts" + (f", {len(failed)} files couldn't go up" if failed else "")
+          + f"\n{link}")
+    return link
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("command", choices=["plan", "review", "apply", "kit", "zip", "finish", "desk", "move-off"])
+    p.add_argument("target", nargs="?", help="the episode name (as in output/<name>)")
+    p.add_argument("file", nargs="?", help="apply: posts.json saved from posts.html")
+    p.add_argument("--start", help="plan: first posting day, YYYY-MM-DD (default tomorrow)")
+    p.add_argument("--time", help="plan: posting time, HH:MM in the social.tz time zone")
+    p.add_argument("--days", help="plan: posting days, e.g. mon,wed,fri")
+    p.add_argument("--music", help="review, finish: music file to put under the clips")
+    p.add_argument("--title", help="zip, finish: name in the zip file, e.g. \"Marcela Fiuza (GLP-1)\"")
+    p.add_argument("--brand", default=str(ROOT / "brand.json"))
+    a = p.parse_args()
+    brand = load_brand(a.brand, a.target and Path(a.target).stem)
+    if not a.target:
+        p.error("give the episode name")
+    name = a.target and Path(a.target).stem
+    if a.command == "plan":
+        plan(name, brand, a.start, a.time, a.days)
+    elif a.command == "review":
+        review(name, brand, a.music)
+    elif a.command == "apply":
+        apply(name, brand, a.file)
+    elif a.command == "kit":
+        kit(name, brand)
+    elif a.command == "zip":
+        make_zip(name, a.title, brand)
+    elif a.command == "move-off":  # e.g. posts planned over Christmas
+        move_off(name, brand)
+    elif a.command == "finish":
+        finish(name, brand, a.music, a.title)
+    else:  # desk: put it on Posting Desk for whoever posts
+        desk_upload(name)
+
+
+if __name__ == "__main__":
+    main()
