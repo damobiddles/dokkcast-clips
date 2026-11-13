@@ -1,18 +1,18 @@
 {
   "studio": {
     "name": "Offcuts",
-    "tagline": "by MBMS Podcast Studio · one episode in, a month of marketing out",
+    "tagline": "by MBMS · one episode in, a month of marketing out",
     "logo": "assets/brand/offcuts-icon.svg",
     "icon": "assets/brand/offcuts-icon.png",
     "fonts_css": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap",
     "font": "Inter, system-ui, sans-serif",
     "headline_font": "Poppins, Inter, sans-serif",
-    "colors": {"bg": "#0B0B0D", "panel": "#18191Ccc", "line": "#2C2D32", "text": "#F2F1EE", "dim": "#A3A4A9", "track": "#2C2D32",
-               "accent": "#EDEBE6", "on_accent": "#111214", "field": "#101113", "button": "#232428", "button_line": "#3A3B40",
-               "code": "#08080A", "ok": "#7BE0A6", "warn": "#FF8A8A", "wait": "#FFD27A"},
+    "colors": {"bg": "#17161C", "panel": "#201F27cc", "line": "#33323C", "text": "#F3F2EE", "dim": "#A8A6B0", "track": "#33323C",
+               "accent": "#5FCF95", "on_accent": "#17161C", "field": "#121116", "button": "#26252E", "button_line": "#3B3A45",
+               "code": "#0F0E13", "ok": "#5FCF95", "warn": "#FF8A8A", "wait": "#FFD27A"},
     "look": {"border": "1px", "shadow": "none", "radius": "12px", "button_radius": "8px", "button_border": "1px",
              "button_shadow": "none", "scheme": "dark", "noise": false,
-             "bg_image": "radial-gradient(70% 55% at 12% 0%, rgba(120,122,130,.20), transparent 70%), radial-gradient(60% 50% at 95% 100%, rgba(90,92,100,.16), transparent 70%), linear-gradient(160deg, #1C1D21 0%, #121316 45%, #0A0A0C 100%)"}
+             "bg_image": "radial-gradient(70% 55% at 12% 0%, rgba(95,207,149,.10), transparent 70%), radial-gradient(60% 50% at 95% 100%, rgba(95,207,149,.06), transparent 70%), linear-gradient(160deg, #1E1D25 0%, #17161C 45%, #121116 100%)"}
   },
   "show": {"name": "The Dokkcast", "kicker": "The Dokkcast", "zip": "Dokkcast posts"},
   "canvas": {
