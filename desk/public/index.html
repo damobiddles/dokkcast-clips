@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Posting Desk</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#121315">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: one column of posting days, each a card of platform tiles; a slim sticky bar holds the filters. Always the dark charcoal look, with no branding. */
+:root {
+  --bg: #eef0f2; --panel: #ffffff; --panel-2: #f5f6f8; --line: #d9dde3; --fg: #17191d; --dim: #5d636e;
+  --accent: #1d2026; --accent-fg: #f6f4ef; --ok: #1f8a57; --ok-soft: #e3f3ea; --warn: #b4540f; --warn-soft: #fbeadc;
+  --today: #2b5fb8; --today-soft: #e4ecfa; --shadow: 0 1px 2px rgba(20, 24, 30, .06);
+  --display: "Manrope", "Inter", system-ui, sans-serif; --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121315; --panel: #1b1d20; --panel-2: #222529; --line: #31353b; --fg: #f1efe9; --dim: #a3a7ae;
+  --accent: #f1efe9; --accent-fg: #17191d; --ok: #5fcf95; --ok-soft: #173326; --warn: #f0a15e; --warn-soft: #3a2616;
+  --today: #8fb4f5; --today-soft: #1c2a44; --shadow: none; color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #121315; --panel: #1b1d20; --panel-2: #222529; --line: #31353b; --fg: #f1efe9; --dim: #a3a7ae;
+  --accent: #f1efe9; --accent-fg: #17191d; --ok: #5fcf95; --ok-soft: #173326; --warn: #f0a15e; --warn-soft: #3a2616;
+  --today: #8fb4f5; --today-soft: #1c2a44; --shadow: none; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg) linear-gradient(180deg, #1a1c1f 0, var(--bg) 420px) no-repeat; color: var(--fg); font: 15px/1.5 var(--body); min-height: 100vh; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.wrap { max-width: 1080px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header { padding-block: 22px 8px; }
+h1 { font: 800 26px/1.15 var(--display); margin: 0; letter-spacing: -.01em; }
+.lede { color: var(--dim); margin: 4px 0 0; max-width: 62ch; }
+.stats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.chip { font-size: 13px; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); color: var(--dim); font-variant-numeric: tabular-nums; }
+.chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.chip.today { background: var(--today-soft); color: var(--today); border-color: transparent; }
+.chip.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); }
+.bar .wrap { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding-block: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.seg button { border: 0; border-radius: 0; background: transparent; padding: 6px 12px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+select, button, .btn { font: 500 13px/1.2 var(--body); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 7px 11px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+button:hover, .btn:hover, select:hover { border-color: var(--dim); }
+button:focus-visible, .btn:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--today); outline-offset: 2px; }
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+button.done-msg { border-color: var(--ok); color: var(--ok); }
+button:disabled { opacity: .5; cursor: default; }
+.spacer { flex: 1; }
+main { padding-block: 8px 48px; display: flex; flex-direction: column; gap: 14px; }
+.day { font: 700 13px/1 var(--display); text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 14px 0 -4px; }
+.post { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px; }
+.post.is-overdue { border-left: 4px solid var(--warn); }
+.post.is-today { border-left: 4px solid var(--today); }
+.post.is-done { opacity: .62; }
+.post-head { display: flex; gap: 10px 14px; align-items: baseline; flex-wrap: wrap; }
+.when { font: 700 16px/1.2 var(--display); font-variant-numeric: tabular-nums; }
+.title { min-width: 0; flex: 1 1 260px; }
+.title b { font-weight: 600; }
+.ep { color: var(--dim); font-size: 13px; }
+.state { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 99px; }
+.state.overdue { background: var(--warn-soft); color: var(--warn); }
+.state.today { background: var(--today-soft); color: var(--today); }
+.state.done { background: var(--ok-soft); color: var(--ok); }
+.state.later { background: var(--panel-2); color: var(--dim); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.tile { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: var(--panel-2); min-width: 0; }
+.tile.is-done { border-color: var(--ok); }
+.tile-head { display: flex; align-items: center; gap: 8px; }
+.pname { font: 700 14px/1.2 var(--display); }
+.shape { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
+.tick { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.tick input { width: 18px; height: 18px; accent-color: var(--ok); margin: 0; }
+video { width: 100%; max-width: 100%; aspect-ratio: 9 / 16; max-height: 320px; background: #000; border-radius: 8px; object-fit: contain; }
+.tile[data-shape="square"] video { aspect-ratio: 1; }
+.cap { font-size: 13px; color: var(--dim); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 6.2em; overflow: hidden; position: relative; }
+.cap.open { max-height: none; }
+.yt { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.more { background: none; border: 0; padding: 0; color: var(--today); font-size: 12px; align-self: flex-start; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.who { font-size: 12px; color: var(--ok); }
+.missing { font-size: 13px; color: var(--warn); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.panel h2 { font: 700 16px/1.2 var(--display); margin: 0; }
+.panel p { margin: 0; color: var(--dim); max-width: 70ch; }
+.eps { display: flex; flex-direction: column; gap: 6px; }
+.eprow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); }
+.eprow .name { flex: 1 1 220px; min-width: 0; }
+.progress { height: 6px; background: var(--panel-2); border-radius: 99px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.note { font-size: 13px; color: var(--dim); }
+.note.err { color: var(--warn); }
+details.help summary { cursor: pointer; font-weight: 600; }
+details.help ol { margin: 8px 0 0; padding-left: 20px; color: var(--dim); max-width: 70ch; }
+details.help li { margin: 4px 0; }
+.empty { text-align: center; padding: 40px 16px; color: var(--dim); }
+.empty b { display: block; font: 700 18px/1.3 var(--display); color: var(--fg); margin-bottom: 6px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<style>
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
+[hidden] { display: none !important; }
+input[type="text"], input[type="password"] { font: 15px var(--body); color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; min-width: 0; flex: 1 1 200px; max-width: 320px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+a.btn { color: var(--fg); }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1 id="h1">Posting Desk</h1>
+  <p class="lede" id="lede">Each clip with its video, cover and caption. Tick a platform once it's posted or scheduled.</p>
+  <div class="stats" id="stats"><span class="chip">Loading the posts…</span></div>
+</div></header>
+
+<div class="bar"><div class="wrap">
+  <div class="seg" role="group" aria-label="Show">
+    <button id="f-todo" aria-pressed="true">To post</button>
+    <button id="f-done" aria-pressed="false">Posted</button>
+  </div>
+  <select id="f-ep" aria-label="Episode"><option value="">All episodes</option></select>
+  <span class="spacer"></span>
+  <button id="me-btn">Your name</button>
+  <button id="admin-toggle">Manage episodes</button>
+</div></div>
+
+<main class="wrap" id="main">
+  <section class="panel" id="me-panel" hidden>
+    <h2>Who's posting?</h2>
+    <p>Your name goes next to the posts you tick, so everyone knows who posted what. It's kept on this device only.</p>
+    <form class="row" id="me-form"><input type="text" id="me-name" autocomplete="name" placeholder="Your first name"><button class="primary" type="submit">Save</button></form>
+  </section>
+
+  <section class="panel" id="key-panel" hidden>
+    <h2>Manage episodes</h2>
+    <p>Enter the admin key to add or remove episodes. Whoever posts doesn't need it.</p>
+    <form class="row" id="key-form"><input type="password" id="key" autocomplete="current-password" placeholder="Admin key"><button class="primary" type="submit">Unlock</button></form>
+    <div class="note" id="key-note"></div>
+  </section>
+
+  <section class="panel" id="admin" hidden>
+    <h2>Episodes on the desk</h2>
+    <p>Add an episode by choosing its zip from Ready to post. The clips, covers and captions are copied up, so whoever posts doesn't need the zip. Each episode gets its own private link: send it to whoever posts that episode, and they see only that episode. Adding the same episode again replaces it and keeps its ticks and link.</p>
+    <div class="actions">
+      <input type="file" id="zip" accept=".zip,application/zip" hidden>
+      <button class="primary" id="add">Add an episode zip</button>
+      <button id="lock">Lock</button>
+    </div>
+    <div id="up" hidden><div class="progress"><i id="bar"></i></div><div class="note" id="upnote"></div></div>
+    <div class="eps" id="eps"></div>
+  </section>
+
+  <details class="help panel" id="help">
+    <summary>How to post</summary>
+    <ol>
+      <li>Work through today's card, and any marked Overdue. Times are UK time unless the card says otherwise.</li>
+      <li>For each platform, press <b>Save video</b> and, if the app lets you pick a cover, <b>Save cover</b>.</li>
+      <li>Press <b>Open</b> to go to that platform's upload page. Upload the video, then press <b>Copy caption</b> and paste it in. YouTube also needs <b>Copy title</b>.</li>
+      <li>Post it, or schedule it for the card's time.</li>
+      <li>Tick <b>Posted</b> on that platform. Everyone sees the tick and your name.</li>
+      <li>Don't change the captions. If something looks wrong, ask whoever sent you this link.</li>
+      <li>Keep this link to yourself. Anyone who has it can see the clips and tick them.</li>
+    </ol>
+  </details>
+
+  <div id="list"></div>
+</main>
+
+<script src="jszip.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+{
+ "_help": "Final Cut settings (see finalcut.py). The Auphonic API key goes in .env as AUPHONIC_API_KEY=..., never here.",
+ "paths": {
+  "inbox": "~/Offcuts/Final Cut/Episodes",
+  "assets": "~/Offcuts/Final Cut/Shared assets",
+  "offcuts_source": "~/Offcuts/Source files"
+ },
+ "default_show": "The Dokkcast",
+ "shows": {
+  "The Dokkcast": {"outro": "The Dokkcast/outro.mp4", "music": "The Dokkcast/intro-music.wav"}
+ },
+ "auphonic": {
+  "preset": "",
+  "send": "video",
+  "cutters": {"silence": true, "filler": true, "cough": true, "music": false},
+  "fade_ms": 100,
+  "min_cut": 0.15,
+  "outputs": ["format=wav", "format=speech,ending=json", "format=transcript,ending=txt"],
+  "speech_recognition": true,
+  "language": "en",
+  "wait_timeout": 21600
+ },
+ "review": {"auphonic": true, "retakes": true},
+ "zoom": {"on": true, "amount": 0.07, "min_cut_seconds": 2.0},
+ "music": {
+  "mode": "fixed",
+  "fixed_db_below_voice": 21,
+  "duck": {"db_below_voice": 10, "threshold": 0.03, "ratio": 8, "attack_ms": 20, "release_ms": 600},
+  "fade_in": 1.0,
+  "fade_out": 2.5,
+  "if_shorter": "loop",
+  "end_fade": 1.0
+ },
+ "loudness": {"target_lufs": -16, "true_peak": -1.0},
+ "export": {"encoder": "libx264", "preset": "medium", "crf": 18, "audio_bitrate": "256k"}
+}
