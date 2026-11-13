@@ -151,7 +151,7 @@ function draw() {
     const mus = d.querySelector(".mus input");
     const s0 = p.src ? parseFloat(p.src.split("#t=")[1]) : 0, s1 = p.src ? parseFloat(p.src.split(",")[1]) : 0;
     const geo = () => L.shapes[shape] || null;
-    const modes = () => (p.speakers > 1 && geo() && geo().own.follow) ? ["auto", "fit", "fill"] : ["fit", "fill"];
+    const modes = () => ((p.can_follow ?? p.speakers > 1) && geo() && geo().own.follow) ? ["auto", "fit", "fill"] : ["fit", "fill"];
     const MODE = { auto: "Follow speaker", fit: "Whole shot", fill: "Fill" };
     const mode = () => {
       const m = (p.frame[shape] || {}).mode || (p.speakers > 1 ? "auto" : "fill");
@@ -310,7 +310,7 @@ if (APP) {
 }
 function choices() {
   const out = JSON.parse(JSON.stringify(D));
-  delete out.shapes; out.posts.forEach(p => { delete p.files; delete p.src; delete p.music_at; delete p.sample; delete p.speakers; delete p.runs; });
+  delete out.shapes; out.posts.forEach(p => { delete p.files; delete p.src; delete p.music_at; delete p.sample; delete p.speakers; delete p.can_follow; delete p.runs; });
   delete out.look;
   if (M) out.music_db = M.db;
   delete out.music;

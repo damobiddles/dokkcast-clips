@@ -344,7 +344,7 @@ def talkers(turns, s, e, share=0.15):
     for t in turns:
         secs[t["spk"]] = secs.get(t["spk"], 0) + max(0, min(e, t["e"]) - max(s, t["s"]))
     total = sum(secs.values()) or 1
-    return sorted(k for k, v in secs.items() if v / total >= share) or sorted(secs)[:1]
+    return sorted(k for k, v in secs.items() if v > 0 and v / total >= share) or sorted(k for k, v in secs.items() if v > 0)[:1]
 
 
 def episode_sides(video, turns, cache):

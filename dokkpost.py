@@ -140,7 +140,10 @@ def review(name, brand, music=None):
         if not c:
             continue
         who = talkers(turns, c["s"], c["e"]) if turns else []
-        p["speakers"] = len(who) or 1
+        p["speakers"] = len(who) or 1  # who really talks: two of them start on Follow speaker, one on Fill
+        everyone = talkers(turns, c["s"], c["e"], share=0) if turns else []
+        p["can_follow"] = len(everyone) > 1  # Follow speaker is offered whenever both are heard at all
+        who = who if len(who) > 1 else everyone
         if len(who) > 1 and fl.get("follow"):  # where Follow speaker points the camera, for the preview
             if sides is None:
                 sides = episode_sides(plan_video, turns, wd / "sides.json") if fl.get("speaker_sides") == "auto" \

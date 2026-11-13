@@ -274,13 +274,13 @@ def finish_audio(voice_wav, music_wav, cfg, out, duck=6):
         sh(["ffmpeg", "-y", "-v", "error", "-i", str(voice_wav), "-af", cfg["audio"], "-ar", str(SR), str(out)])
 
 
-def framing(clip, shape, layout, speakers):
+def framing(clip, shape, layout, speakers, present=None):
     """How a clip sits in one shape: plan.json clip "frame" {shape: {"mode": "fill"|"fit"|"auto", "x": 0..1}},
     chosen on the review page. Unset, a one-person clip fills the frame and a two-person one follows whoever's
     talking. Returns the layout to render with and the fill position (None for the layout's own framing)."""
     fr = (clip.get("frame") or {}).get(shape) or {}
     mode = fr.get("mode") or ("fill" if speakers < 2 else "auto")
-    if layout == "speaker" and (speakers < 2 or mode != "auto"):
+    if layout == "speaker" and ((present or speakers) < 2 or mode != "auto"):
         layout = "wide"  # following needs two people; fit and fill keep the picture still
     return layout, ({"x": fr.get("x", 0.5)} if mode == "fill" else None)
 
@@ -344,7 +344,7 @@ def render_clips(name, brand, only_id=None):
                     ct.append({"s": a, "e": b, "spk": t["spk"]})
         (cdir / f"{stem}.turns.json").write_text(json.dumps(ct or [{"s": 0, "e": dur, "spk": 0}], indent=1))
         for shape, layout in brand["clips"]["formats"].items():
-            layout, frame = framing(clip, shape, layout, len(dokkclip.talkers(ct, 0, dur)))
+            layout, frame = framing(clip, shape, layout, len(dokkclip.talkers(ct, 0, dur)), len({t["spk"] for t in ct}))
             sides = None
             if layout == "speaker" and brand["layouts"][layout].get("speaker_sides") == "auto":
                 sides = dokkclip.episode_sides(video, turns, wd / "sides.json")
