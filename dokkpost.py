@@ -1,68 +1,40 @@
 #!/usr/bin/env python3
-"""Social posting: approve clips and copy, then schedule them through Postiz.
+"""Posts: plan the posting dates, review and approve the clips, make the posting kit and zip, and put
+it on Posting Desk.
 
-    python dokkpost.py plan Marcela                 # posts.json from the clips + copy.json, one clip per weekday
+    python dokkpost.py plan Marcela                 # posts.json from the clips + copy.json, one clip per posting day
     python dokkpost.py plan Marcela --start 2026-11-02 --time 12:00 --days mon,wed,fri
-    python dokkpost.py review Marcela               # writes output/Marcela/posts.html to tick clips and edit copy
-    python dokkpost.py review Marcela --music ~/Movies/Dokkcast/track.wav   # same, with a music slider to set the mix
+    python dokkpost.py review Marcela --music ~/Movies/track.wav   # posts.html: framing, music level, captions, Approve
     python dokkpost.py apply Marcela ~/Downloads/posts.json   # take the choices saved from posts.html
-    python dokkpost.py kit Marcela                  # posting kit to upload by hand: output/Marcela/kit/
-    python dokkpost.py zip Marcela                  # the kit as Dokkcast posts - <guest>.zip in Ready to post
+    python dokkpost.py finish Marcela --music ~/Movies/track.wav   # render approved clips, covers, kit, zip
+    python dokkpost.py kit Marcela                  # just the posting kit: output/Marcela/kit/
+    python dokkpost.py zip Marcela                  # just the zip, in Ready to post
+    python dokkpost.py desk Marcela                 # upload it to Posting Desk and print its private link
     python dokkpost.py move-off Marcela             # move posts off days off (brand.json social "off", e.g. Christmas)
-    python dokkpost.py finish Marcela --music ~/Movies/Dokkcast/track.wav   # render approved clips, graphics, kit, zip
-    python dokkpost.py channels                     # check the Postiz login and list connected accounts
-    python dokkpost.py schedule Marcela             # dry run: what would go out, and each channel's rules
-    python dokkpost.py schedule Marcela --go        # upload approved clips and schedule them in Postiz
-
-The kit needs no Postiz: one folder per posting day with each platform's video and caption, and
-kit.html with copy buttons and upload links, to post or schedule by hand in each app.
-
-Nothing is sent to Postiz unless a post is approved in posts.json and schedule is run with --go.
-Posts already sent are remembered in posts.json, so running schedule again only sends new approvals.
 
 The review page works before the clips are rendered too: until a clip file exists it plays that
 stretch of the episode instead. Clips left unapproved are marked skip in plan.json by apply, so
-finish only renders the approved ones.
+finish only renders the approved ones. The music level saved from the page is what the clips are
+rendered with (plan.json "music_db").
 
-With a music track (review --music, or one already given to render/finish) the review page gets a
-music slider: it plays the episode with the track underneath at that level, and the level saved
-from the page is what the clips are rendered with (plan.json "music_db").
-
-Copy lives in output/<name>/copy.json, written alongside the clips:
+Copy lives in output/<name>/copy.json, written by dokkpick.py:
 
     {"1": {"tiktok": "...", "instagram": "...", "linkedin": "...", "youtube_title": "...", "youtube": "..."}}
 
-Which clip shape each platform gets, the posting time zone and per-platform Postiz settings are in
-brand.json under "social". Needs the Postiz CLI (npm install -g postiz) and `postiz auth:login`.
+Which clip shape each platform gets, the posting days, time and time zone are in brand.json "social".
 """
 import argparse, base64, json, os, re, shutil, subprocess, sys, time, uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from dokkclip import FILL_LOGO, FOLLOW_FILL, LOGO_SIZE, camera_runs, episode_sides, talkers, READY, ROOT, STUDIO, day_off, layout_brand, load_brand
 from dokkepisode import load_plan
 
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-# Postiz integration identifiers for each platform we post to
-IDENTIFIERS = {"tiktok": ["tiktok"], "instagram": ["instagram", "instagram-standalone"],
-               "youtube": ["youtube"], "linkedin": ["linkedin-page", "linkedin"]}
 
 
 def work_dir(name):
     return ROOT / "output" / name
-
-
-def postiz(*args):
-    """Run the Postiz CLI and return the JSON it prints after its one-line header."""
-    if not shutil.which("postiz"):
-        sys.exit("postiz not found: run `npm install -g postiz`, then `postiz auth:login`")
-    r = subprocess.run(["postiz", *map(str, args)], capture_output=True, text=True)
-    if r.returncode:
-        sys.exit(f"postiz {args[0]} failed:\n{(r.stderr or r.stdout)[-2000:]}")
-    out = r.stdout
-    i = min((k for k in (out.find("["), out.find("{")) if k >= 0), default=-1)
-    return json.loads(out[i:]) if i >= 0 else out
 
 
 # ------------------------------------------------------------------------ plan
@@ -449,7 +421,7 @@ def desk_call(method, path, body=None, kind="application/json", key=None, base=N
                 return json.loads(r.read() or b"{}")
         except urllib.error.HTTPError as e:
             msg = (json.loads(e.read() or b"{}") or {}).get("error") if e.headers.get_content_type() == "application/json" else None
-            if e.code == 403 or n == tries:
+            if e.code < 500 or n == tries:  # a refusal (bad key, a clash) won't change by trying again
                 raise SystemExit(f"Posting Desk said {e.code}: {msg or e.reason}")
         except OSError as e:
             if n == tries:
@@ -507,22 +479,31 @@ def desk_upload(name, base=None):
                              "caption": (p.get("copy") or {}).get(pl, ""),
                              "title": (p.get("copy") or {}).get("youtube_title", "") if pl == "youtube" else ""}
         posts.append({"clip": str(p["clip"]), "title": p.get("title", ""), "when": p["when"], "platforms": platforms})
-    ids, failed = {}, {}
-    for i, (rel, kind) in enumerate(jobs.items(), 1):
+    ids, failed, todo = {}, {}, []
+    for rel, kind in jobs.items():
         f = kdir / rel
         if not f.exists():
-            failed[rel] = "This video wasn't in the kit."; continue
-        size = f.stat().st_size
-        if size > DESK_MAX:
-            failed[rel] = f"This video is {size / 1e6:.0f} MB, too big for the desk. Post it from the episode zip."; continue
-        fid, parts = uuid.uuid4().hex, []
+            failed[rel] = "This video wasn't in the kit."
+        elif f.stat().st_size > DESK_MAX:
+            failed[rel] = f"This video is {f.stat().st_size / 1e6:.0f} MB, too big for the desk. Post it from the episode zip."
+        else:
+            todo.append((rel, kind))
+
+    def send(job):
+        rel, kind = job
+        f, fid, parts = kdir / rel, uuid.uuid4().hex, []
         with open(f, "rb") as fh:
             for n, piece in enumerate(iter(lambda: fh.read(DESK_PART), b"")):
                 desk_call("PUT", f"/api/file/{fid}/part/{n}", piece, "application/octet-stream", base=base)
                 parts.append(len(piece))
-        desk_call("PUT", f"/api/file/{fid}/meta", {"type": kind, "size": size, "parts": parts}, base=base)
-        ids[rel] = fid
-        print(f"uploaded {i} of {len(jobs)}: {rel} ({size / 1e6:.1f} MB)", flush=True)
+        desk_call("PUT", f"/api/file/{fid}/meta", {"type": kind, "size": sum(parts), "parts": parts}, base=base)
+        return rel, fid, sum(parts)
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(4) as pool:  # a few files at once: much quicker than one after another
+        for i, (rel, fid, size) in enumerate(pool.map(send, todo), 1):
+            ids[rel] = fid
+            print(f"uploaded {i} of {len(todo)}: {rel} ({size / 1e6:.1f} MB)", flush=True)
     for p in posts:
         for x in p["platforms"].values():
             x["video"] = ids.get(x["rel"])
@@ -530,7 +511,7 @@ def desk_upload(name, base=None):
                 x["missing"] = failed.get(x["rel"])
             x["cover"] = ids.get(x["coverRel"]) if x["coverRel"] else None
             del x["rel"], x["coverRel"]
-    r = desk_call("PUT", f"/api/episode/{desk_slug(D.get('episode') or title)}", {
+    r = desk_call("PUT", f"/api/episode/{desk_slug(title)}", {
         "title": title, "episode": D.get("episode") or title, "tz": D.get("tz") or "Europe/London", "posts": posts,
         "files": list(ids.values()), "addedAt": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")}, base=base)
     link = f"{base or DESK_URL}/?e={r['share']}"
@@ -541,65 +522,9 @@ def desk_upload(name, base=None):
     return link
 
 
-# -------------------------------------------------------------------- schedule
-def channels(brand, quiet=False):
-    """Map each platform to a connected Postiz account: brand.json social.channels wins, else the only match."""
-    found = postiz("integrations:list")
-    if not quiet:
-        for i in found:
-            print(f"{i['identifier']:22} {i['id']}  {i.get('name', '')}{'  (disabled)' if i.get('disabled') else ''}")
-    pick = {}
-    for pl in brand["social"]["platforms"]:
-        want = brand["social"].get("channels", {}).get(pl)
-        hits = [i for i in found if (i["id"] == want if want else i["identifier"] in IDENTIFIERS[pl]) and not i.get("disabled")]
-        if len(hits) == 1:
-            pick[pl] = hits[0]
-        elif not quiet:
-            print(f"{pl}: {'no connected account' if not hits else 'more than one account, set social.channels.' + pl + ' in brand.json'}")
-    return pick
-
-
-def settings_for(pl, post, brand):
-    s = json.loads(json.dumps(brand["social"]["settings"].get(pl, {})))
-    if pl == "youtube":
-        s["title"] = post["copy"].get("youtube_title") or post["title"]
-    return s
-
-
-def schedule(name, brand, go=False):
-    wd = work_dir(name)
-    data = json.loads((wd / "posts.json").read_text())
-    tz = ZoneInfo(data.get("tz", "Europe/London"))
-    todo = [(p, pl) for p in data["posts"] if p["approved"] for pl, on in p["platforms"].items()
-            if on and pl not in p.get("sent", {})]
-    if not todo:
-        sys.exit("nothing to send: no approved posts that haven't been scheduled already")
-    pick = channels(brand, quiet=True)
-    # each channel's own rules say which settings apply; a setting that doesn't is dropped silently by Postiz
-    rules = {pl: postiz("integrations:settings", ch["id"]) for pl, ch in pick.items()}
-    (wd / "postiz-settings.json").write_text(json.dumps(rules, indent=1))
-    now = datetime.now(tz)
-    for p, pl in todo:
-        when = datetime.fromisoformat(p["when"]).replace(tzinfo=tz)
-        f = wd / "clips" / f"{name}_clip{p['clip']}_{brand['social']['shapes'][pl]}.mp4"
-        problem = ("no connected account" if pl not in pick else "clip file missing" if not f.exists()
-                   else "date is in the past" if when < now else "")
-        print(f"{'SKIP ' if problem else ''}clip {p['clip']} -> {pl:9} {when:%a %d %b %H:%M} {f.name}"
-              + (f"  ({problem})" if problem else ""))
-        if problem or not go:
-            continue
-        media = postiz("upload", f)["path"]
-        res = postiz("posts:create", "-c", p["copy"][pl], "-m", media, "-s", when.astimezone(ZoneInfo("UTC")).isoformat(),
-                     "-i", pick[pl]["id"], "--settings", json.dumps(settings_for(pl, p, brand)))
-        p.setdefault("sent", {})[pl] = {"at": datetime.now(tz).isoformat(timespec="seconds"), "media": media, "result": res}
-        (wd / "posts.json").write_text(json.dumps(data, indent=1))  # save after each so a failure doesn't resend
-    if not go:
-        print(f"\ndry run: nothing sent. Channel rules saved to {wd / 'postiz-settings.json'}. Add --go to schedule.")
-
-
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["plan", "review", "apply", "kit", "zip", "finish", "desk", "channels", "schedule", "move-off"])
+    p.add_argument("command", choices=["plan", "review", "apply", "kit", "zip", "finish", "desk", "move-off"])
     p.add_argument("target", nargs="?", help="the episode name (as in output/<name>)")
     p.add_argument("file", nargs="?", help="apply: posts.json saved from posts.html")
     p.add_argument("--start", help="plan: first posting day, YYYY-MM-DD (default tomorrow)")
@@ -607,11 +532,10 @@ def main():
     p.add_argument("--days", help="plan: posting days, e.g. mon,wed,fri")
     p.add_argument("--music", help="review, finish: music file to put under the clips")
     p.add_argument("--title", help="zip, finish: name in the zip file, e.g. \"Marcela Fiuza (GLP-1)\"")
-    p.add_argument("--go", action="store_true", help="schedule: really upload and schedule")
     p.add_argument("--brand", default=str(ROOT / "brand.json"))
     a = p.parse_args()
     brand = load_brand(a.brand, a.target and Path(a.target).stem)
-    if a.command != "channels" and not a.target:
+    if not a.target:
         p.error("give the episode name")
     name = a.target and Path(a.target).stem
     if a.command == "plan":
@@ -628,12 +552,8 @@ def main():
         move_off(name, brand)
     elif a.command == "finish":
         finish(name, brand, a.music, a.title)
-    elif a.command == "desk":  # put it on Posting Desk for whoever posts
+    else:  # desk: put it on Posting Desk for whoever posts
         desk_upload(name)
-    elif a.command == "channels":
-        channels(brand)
-    else:
-        schedule(name, brand, a.go)
 
 
 if __name__ == "__main__":

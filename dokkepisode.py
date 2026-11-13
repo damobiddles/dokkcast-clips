@@ -1,22 +1,15 @@
 #!/usr/bin/env python3
-"""Episode edit: a light edit of a full episode plus branded clips.
+"""Episodes: transcribe one, then render its branded clips.
 
-    python dokkepisode.py prep ~/Videos/ep12.mp4     # transcript + suggested cuts -> output/ep12/
-    python dokkepisode.py review ep12               # writes output/ep12/review.html to check suggestions
-    python dokkepisode.py render ep12               # edited episode + clips in three shapes
-    python dokkepisode.py render ep12 --only clips  # or --only episode
+    python dokkepisode.py prep ~/Videos/ep12.mp4     # transcript, speakers and plan.json -> output/ep12/
+    python dokkepisode.py render ep12               # the clips, each shape framed as chosen on the review page
+    python dokkepisode.py render ep12 --clip 3      # just clip 3
 
-Everything for an episode lives in output/<name>/. The edit is driven by plan.json there:
+Everything for an episode lives in output/<name>/, driven by plan.json there:
 
     speakers  {"0": {"name": "Damien", "role": "Host"}}   who diarization speaker 0, 1... is
-    cuts      [{"id", "s", "e", "kind", "note", "accept"}] seconds in the original video
-    hook      {"s", "e", "note"}                           played before the episode starts
-    clips     [{"id", "s", "e", "title", "note"}]          30-60 s highlights
-    stats     [{"s", "e", "text", "sub"}]                  on-screen stat cards
-
-prep fills cuts with pauses, fillers and stutters it can find from timings. The editorial
-suggestions (awkward bits, repetition, hook, clips, stats) are added by Claude after reading
-transcript.txt, and every cut can be accepted or ignored before rendering.
+    cuts      [{"id", "s", "e", "kind", "accept"}]         pauses, fillers and stutters found by prep, cut from the clips
+    clips     [{"id", "s", "e", "title", "frame"}]         30-60 s clips, picked by dokkpick.py
 """
 import argparse, json, re, shutil, subprocess, sys, wave
 from pathlib import Path
@@ -175,52 +168,7 @@ def auto_cuts(words, cfg):
 
 
 # --------------------------------------------------------------------- suggest
-def suggest(name, path):
-    """Merge editorial suggestions (speakers, cuts, hook, clips, stats) into plan.json.
-    Re-running with the same file replaces the earlier editorial cuts rather than adding twice."""
-    wd = work_dir(name)
-    plan = json.loads((wd / "plan.json").read_text())
-    new = json.loads(Path(path).expanduser().read_text())
-    for spk, who in new.get("speakers", {}).items():
-        plan["speakers"].setdefault(spk, {}).update({k: v for k, v in who.items() if v})
-    cuts = [c for c in plan["cuts"] if c["kind"] in ("pause", "filler", "repeat")]
-    nid = max((c["id"] for c in cuts), default=0)
-    for k, c in enumerate(new.get("cuts", []), nid + 1):
-        cuts.append(dict({"kind": "edit", "accept": False}, **c, id=k))
-    plan["cuts"] = cuts
-    for key in ("hook", "clips", "stats"):
-        if key in new:
-            plan[key] = new[key]
-    (wd / "plan.json").write_text(json.dumps(plan, indent=1))
-    print(f"{len(new.get('cuts', []))} editorial cuts, {len(plan['clips'])} clips, {len(plan['stats'])} stat cards -> {wd / 'plan.json'}")
-    review(name)
-
-
 # ---------------------------------------------------------------------- review
-def review(name):
-    wd = work_dir(name)
-    plan = load_plan(wd)
-    words = json.loads((wd / "words.json").read_text())
-
-    def text(s, e):
-        return " ".join(w["w"] for w in words if s - 0.01 <= w["s"] < e)
-
-    def ctx(s, e):
-        before = " ".join(w["w"] for w in words if s - 6 <= w["s"] < s - 0.01)
-        after = " ".join(w["w"] for w in words if e <= w["s"] < e + 6)
-        return before, after
-    data = dict(plan, cuts=[dict(c, text=text(c["s"], c["e"]), ctx=ctx(c["s"], c["e"])) for c in plan["cuts"]],
-                clips=[dict(c, text=text(c["s"], c["e"])) for c in plan.get("clips", [])],
-                samples={s: next(([t["s"], t["e"]] for t in json.loads((wd / "turns.json").read_text())
-                                  if str(t["spk"]) == s and t["e"] - t["s"] > 4), None) for s in plan["speakers"]},
-                video_url=Path(plan["video"]).as_uri())
-    if plan.get("hook"):
-        data["hook"] = dict(plan["hook"], text=text(plan["hook"]["s"], plan["hook"]["e"]))
-    html = (ROOT / "assets" / "review.html").read_text().replace("/*PLAN*/null", json.dumps(data))
-    (wd / "review.html").write_text(html)
-    print(f"open {wd / 'review.html'} in a browser")
-
-
 # ---------------------------------------------------------------------- render
 def keep_segments(cuts, start, end):
     """The parts of [start, end] that survive the accepted cuts."""
@@ -326,125 +274,6 @@ def finish_audio(voice_wav, music_wav, cfg, out, duck=6):
         sh(["ffmpeg", "-y", "-v", "error", "-i", str(voice_wav), "-af", cfg["audio"], "-ar", str(SR), str(out)])
 
 
-def card_png(brand, path, width, title, sub, accent=True):
-    """A lower-third style card: navy rounded box, accent bar, title and subtitle in Manrope."""
-    from PIL import Image, ImageDraw, ImageFont
-    u = width / 1920
-    big = ImageFont.truetype(str(ROOT / "assets/fonts/Manrope-800.ttf"), round(54 * u))
-    small = ImageFont.truetype(str(ROOT / "assets/fonts/Manrope-700.ttf"), round(34 * u))
-    pad, bar = round(30 * u), round(10 * u)
-    tw = max(big.getlength(title), small.getlength(sub) if sub else 0)
-    w = round(tw + 2 * pad + bar + pad * 0.6)
-    h = round(pad * 2 + 62 * u + (46 * u if sub else 0))
-    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    top = tuple(int(brand["canvas"]["bg_top"][i:i + 2], 16) for i in (1, 3, 5))
-    hi = tuple(int(brand["captions"]["highlight"][i:i + 2], 16) for i in (1, 3, 5))
-    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=round(18 * u), fill=top + (225,))
-    if accent:
-        d.rounded_rectangle([pad * 0.6, pad, pad * 0.6 + bar, h - pad], radius=bar // 2, fill=hi + (255,))
-    x = pad * 0.6 + bar + pad
-    d.text((x, pad - 6 * u), title, font=big, fill=(255, 255, 255, 255))
-    if sub:
-        d.text((x, pad + 62 * u), sub, font=small, fill=hi + (255,))
-    img.save(path)
-    return w, h
-
-
-def overlay_chain(cards, info, start_label, out_label):
-    """ffmpeg filters placing each card PNG (inputs from index start) with a fade, in edited time."""
-    parts, cur = [], start_label
-    for k, c in enumerate(cards):
-        a, b = c["s"], c["e"]
-        parts.append(f"[{c['input']}:v]format=rgba,fade=t=in:st={a:.2f}:d=0.35:alpha=1,"
-                     f"fade=t=out:st={b - 0.35:.2f}:d=0.35:alpha=1[c{k}]")
-        nxt = f"o{k}" if k + 1 < len(cards) else out_label
-        parts.append(f"[{cur}][c{k}]overlay={c['x']}:{c['y']}:enable='between(t,{a:.2f},{b:.2f})'[{nxt}]")
-        cur = nxt
-    return parts
-
-
-def lower_thirds(plan, turns, fwd, secs, after):
-    """Name card the first time each named speaker talks for a while, after the hook."""
-    out = []
-    for spk, who in plan["speakers"].items():
-        if not who.get("name"):
-            continue
-        for t in turns:
-            if str(t["spk"]) == spk and t["e"] - t["s"] >= min(secs, 3):
-                s = fwd(t["s"] + 0.5)
-                late = fwd(t["e"] - 3)
-                if s is not None and late is not None and s < after <= late:
-                    s = after  # their turn runs on past the hook: show the card as the episode starts
-                if s is not None and s >= after:
-                    out.append({"s": s, "e": s + secs, "title": who["name"], "sub": who.get("role", "")})
-                    break
-    return sorted(out, key=lambda c: c["s"])
-
-
-def render_episode(name, brand):
-    wd = work_dir(name); work = wd / ".work"; work.mkdir(parents=True, exist_ok=True)
-    plan = load_plan(wd)
-    video, cfg = Path(plan["video"]), brand["episode"]
-    info = probe(video)
-    turns = json.loads((wd / "turns.json").read_text())
-    segs = keep_segments(plan["cuts"], 0, info["dur"])
-    hook = plan.get("hook")
-    hook_segs = keep_segments(plan["cuts"], hook["s"], hook["e"]) if hook else []
-    hook_len = sum(b - a for a, b in hook_segs)
-    fwd = mapper(segs, hook_len)
-    body_len = sum(b - a for a, b in segs)
-    total = hook_len + body_len
-    print(f"episode {mmss(info['dur'])} -> {mmss(total)} ({len(segs) - 1} cuts, hook {hook_len:.0f}s)")
-
-    print("audio: splicing, cleaning, music ...")
-    x = load_audio48(video)
-    import numpy as np
-    write_wav(np.concatenate([splice(x, hook_segs), splice(x, segs)]) if hook_segs else splice(x, segs), work / "voice.wav")
-    m = cfg["music"]
-    beds = [(0, hook_len + m["intro_seconds"]), (total - m["outro_seconds"], total)]
-    music = music_track(m, total, beds, work)
-    if not music:
-        print(f"  no music: put a track in {ROOT / m['dir']} to get intro/outro beds")
-    finish_audio(work / "voice.wav", music, cfg, work / "mix.wav")
-
-    cards = []
-    for c in lower_thirds(plan, turns, fwd, cfg["lower_third_seconds"], hook_len + 2):
-        cards.append(dict(c, kind="name"))
-    for st in plan.get("stats", []):
-        s, e = fwd(st["s"]), fwd(st["e"])
-        if s is not None:
-            cards.append({"s": s, "e": e or s + 6, "title": st["text"], "sub": st.get("sub", ""), "kind": "stat"})
-    margin = round(info["w"] * 0.045)
-    for k, c in enumerate(cards):
-        png = work / f"card{k}.png"
-        w, h = card_png(brand, png, info["w"], c["title"], c["sub"])
-        c.update(png=png, input=3 + k, x=margin if c["kind"] == "name" else info["w"] - w - margin,
-                 y=info["h"] - h - round(info["h"] * 0.09) if c["kind"] == "name" else round(info["h"] * 0.08))
-
-    inputs = ["-i", str(video)]
-    if hook_segs:  # seek to the hook rather than decoding the whole file twice
-        inputs += ["-ss", f"{hook['s']:.3f}", "-t", f"{hook['e'] - hook['s']:.3f}", "-i", str(video)]
-    else:
-        inputs += ["-f", "lavfi", "-i", "nullsrc=s=16x16:d=0.1"]
-    inputs += ["-i", str(work / "mix.wav")]
-    for c in cards:
-        inputs += ["-loop", "1", "-framerate", info["fps_str"], "-t", f"{total:.3f}", "-i", str(c["png"])]
-    fc = [f"[0:v]{video_trim(segs, info['fps'])}[body]"]
-    if hook_segs:
-        local = [(a - hook["s"], b - hook["s"]) for a, b in hook_segs]
-        fc += [f"[1:v]{video_trim(local, info['fps'])}[hook]", "[hook][body]concat=n=2:v=1:a=0[base]"]
-    else:
-        fc += ["[body]null[base]"]
-    fc += overlay_chain(cards, info, "base", "out") if cards else ["[base]null[out]"]
-    out = wd / f"{name}_edited.mp4"
-    print(f"video: rendering {len(cards)} overlays (this is the long step) ...")
-    sh(["ffmpeg", "-y", "-v", "error", "-stats", *inputs, "-filter_complex", ";".join(fc), "-map", "[out]", "-map", "2:a",
-        *cfg["video"], "-pix_fmt", "yuv420p", "-r", info["fps_str"], "-c:a", "aac", "-b:a", "192k",
-        "-t", f"{total:.3f}", "-movflags", "+faststart", str(out)])
-    print(f"edited episode -> {out}")
-
-
 def framing(clip, shape, layout, speakers):
     """How a clip sits in one shape: plan.json clip "frame" {shape: {"mode": "fill"|"fit"|"auto", "x": 0..1}},
     chosen on the review page. Unset, a one-person clip fills the frame and a two-person one follows whoever's
@@ -527,10 +356,9 @@ def render_clips(name, brand, only_id=None):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("command", choices=["prep", "suggest", "review", "render"])
-    p.add_argument("target", help="prep: the episode video; review/render: the episode name (file name without .mp4)")
-    p.add_argument("file", nargs="?", help="suggest: JSON with editorial suggestions")
-    p.add_argument("--only", choices=["episode", "clips"])
+    p.add_argument("command", choices=["prep", "render"])
+    p.add_argument("target", help="prep: the episode video; render: the episode name (file name without .mp4)")
+    p.add_argument("--only", choices=["clips"], help="(the clips are all render makes now)")
     p.add_argument("--clip", type=int, help="render just this clip id")
     p.add_argument("--music", help="render: music file to put under the clips (remembered in plan.json)")
     p.add_argument("--speakers", type=int, default=2, help="prep: how many people talk in the episode")
@@ -541,10 +369,6 @@ def main():
         sys.exit("ffmpeg not found: run ./setup.sh first")
     if a.command == "prep":
         prep(a.target, brand, a.speakers)
-    elif a.command == "suggest":
-        suggest(Path(a.target).stem, a.file)
-    elif a.command == "review":
-        review(Path(a.target).stem)
     else:
         name = Path(a.target).stem
         if a.music:
@@ -552,10 +376,7 @@ def main():
             pl = json.loads(pj.read_text())
             pl["music"] = str(Path(a.music).expanduser().resolve())
             pj.write_text(json.dumps(pl, indent=1))
-        if a.only != "clips" and not a.clip:
-            render_episode(name, brand)
-        if a.only != "episode":
-            render_clips(name, brand, a.clip)
+        render_clips(name, brand, a.clip)
 
 
 if __name__ == "__main__":

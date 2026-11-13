@@ -47,12 +47,31 @@ def state_path(name):
 
 def load_state(name):
     p = state_path(name)
-    return json.loads(p.read_text()) if p.exists() else None
+    for _ in range(3):  # a write in progress elsewhere: try again in a moment
+        try:
+            return json.loads(p.read_text()) if p.exists() else None
+        except ValueError:
+            time.sleep(0.05)
+    return None
 
 
 def save_state(name, st):
-    state_path(name).parent.mkdir(parents=True, exist_ok=True)
-    state_path(name).write_text(json.dumps(st, indent=1))
+    """Written whole, then swapped in, so the page never reads half a file."""
+    p = state_path(name)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(f".app.{threading.get_ident()}.json")
+    tmp.write_text(json.dumps(st, indent=1))
+    tmp.replace(p)
+
+
+def tail(path, n=3000):
+    """The end of a log, without reading all of it."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(max(0, f.seek(0, 2) - n))
+            return f.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
 
 
 def log(name, text):
@@ -71,7 +90,7 @@ def run(name, cmd):
         r.wait()
     st = load_state(name); st.pop("pid", None); save_state(name, st)
     if r.returncode:  # the tool's last line usually says what went wrong
-        last = [l for l in (OUT / name / "app.log").read_text().splitlines() if l.strip()][-1:]
+        last = [l for l in tail(OUT / name / "app.log").splitlines() if l.strip()][-1:]
         raise RuntimeError(f"{Path(cmd[1]).name} {cmd[2]} failed: {last[0].strip()[:200] if last else 'see Details'}")
 
 
@@ -103,7 +122,10 @@ def next_start():
     Once an episode's posts are approved, only those count: the ones left out won't go out."""
     last = date.today()
     for pj in OUT.glob("*/posts.json"):
-        posts = json.loads(pj.read_text()).get("posts", [])
+        try:
+            posts = json.loads(pj.read_text()).get("posts", [])
+        except (ValueError, OSError):
+            continue
         for p in [p for p in posts if p.get("approved")] or posts:
             try:
                 last = max(last, datetime.strptime(p["when"][:10], "%Y-%m-%d").date())
@@ -128,9 +150,15 @@ def settings():
     return json.loads(p.read_text()) if p.exists() else {}
 
 
+_cli = {"at": 0, "path": None}
+
+
 def claude_cli():
-    from dokkpick import claude_cli as find
-    return find()
+    """Claude Code on this Mac (looked for at most every 30 seconds: the page asks every few)."""
+    if time.time() - _cli["at"] > 30:
+        from dokkpick import claude_cli as find
+        _cli.update(at=time.time(), path=find())
+    return _cli["path"]
 
 
 login = {"ok": None, "at": 0}  # is Claude Code signed in? checked in the background, at most once a minute
@@ -302,7 +330,17 @@ def advance(name):
                     if not how:  # leave the request ready for Claude in chat, then wait
                         run(name, [PY, "dokkpick.py", name, "--prompt"] + who)
                         st["status"] = "waiting"; st["waiting"] = "picks"; save_state(name, st); return
-                    run(name, [PY, "dokkpick.py", name] + (["--claude"] if how == "mac" else []) + who)
+                    try:
+                        run(name, [PY, "dokkpick.py", name] + (["--claude"] if how == "mac" else []) + who)
+                    except RuntimeError as e:
+                        if how != "mac" or "signed in" not in str(e):
+                            raise
+                        # Claude Code is there but not signed in: wait for Claude in chat instead of stopping
+                        run(name, [PY, "dokkpick.py", name, "--prompt"] + who)
+                        st = load_state(name)
+                        st.update(status="waiting", waiting="picks", pick_note="signin"); save_state(name, st); return
+                    st = load_state(name)
+                st.pop("pick_note", None)
                 st["step"] = "review"
             elif step == "review":
                 st.pop("finish_started", None)
@@ -541,40 +579,25 @@ def start(name):
 def episodes(logs=True):
     out = []
     for p in sorted(OUT.glob("*/app.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        st = json.loads(p.read_text())
+        st = load_state(p.parent.name)
+        if not st:
+            continue
         st["name"] = p.parent.name
         st["running"] = st["name"] in jobs
-        lg = p.parent / "app.log"
-        st["log"] = lg.read_text()[-3000:] if logs and lg.exists() else ""
+        st["log"] = tail(p.parent / "app.log") if logs else ""
         st["photo_set"] = (p.parent / "photo.jpg").exists()
         st["review_url"] = page(st["name"], "posts.html")
         st["has_kit"] = (p.parent / "kit" / "kit.html").exists()
-        st["kit_url"] = page(st["name"], "kit/kit.html")
         st["kit"] = st.get("kit") or DEFAULT_KIT
         dj = p.parent / "desk.json"
         if dj.exists():
-            d = json.loads(dj.read_text()); st["desk_link"], st["desk_failed"] = d.get("link"), d.get("failed")
+            try:
+                d = json.loads(dj.read_text()); st["desk_link"], st["desk_failed"] = d.get("link"), d.get("failed")
+            except ValueError:
+                pass
         st["no_covers"] = st.get("status") == "done" and (p.parent / "kit").is_dir() and not any((p.parent / "kit").glob("*/cover *.png"))
         out.append(st)
     return out
-
-
-SW = """// Offcuts, installed as an app: everything comes live from Offcuts on this Mac; when it isn't running,
-// say how to start it instead of the browser's own error page.
-self.addEventListener("install", e => self.skipWaiting());
-self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
-self.addEventListener("fetch", e => {
-  if (e.request.mode !== "navigate") return;
-  e.respondWith(fetch(e.request).catch(() => new Response(
-    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-     <title>Offcuts</title><body style="margin:0;height:100vh;display:grid;place-items:center;background:#0B0B0D;
-     color:#F2F1EE;font:16px system-ui;text-align:center"><div><h1 style="font-size:28px">Offcuts isn't running</h1>
-     <p style="color:#A3A4A9">Open Offcuts from the Dock or your Offcuts folder, then press Try again.</p>
-     <button onclick="location.reload()" style="font:inherit;padding:9px 18px;border-radius:8px;border:0;
-     background:#EDEBE6;color:#111214;font-weight:700;cursor:pointer">Try again</button></div>`,
-    { headers: { "Content-Type": "text/html; charset=utf-8" } })));
-});
-"""
 
 
 # ------------------------------------------------------------------- the server
@@ -669,24 +692,6 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/":
             html = (ROOT / "assets" / "app.html").read_text().replace("/*STUDIO*/null", json.dumps(studio()))
             return self.send(200, html.encode(), "text/html; charset=utf-8")
-        if u.path == "/manifest.webmanifest":  # so the browser can install Offcuts as an app with its own window
-            st = studio()
-            return self.send(200, json.dumps({
-                "name": st["name"], "short_name": st["name"], "description": st.get("tagline", ""),
-                "start_url": "/", "scope": "/", "display": "standalone", "id": "/",
-                "background_color": st.get("colors", {}).get("bg", "#0B0B0D"),
-                "theme_color": st.get("colors", {}).get("bg", "#0B0B0D"),
-                "icons": [{"src": f"/icon-{n}.png", "sizes": f"{n}x{n}", "type": "image/png", "purpose": "any"}
-                          for n in (192, 512)]}).encode(), "application/manifest+json")
-        m = re.fullmatch(r"/icon-(\d+)\.png", u.path)
-        if m and studio().get("icon") and int(m[1]) in (180, 192, 512):
-            from io import BytesIO
-            from PIL import Image
-            n, buf = int(m[1]), BytesIO()
-            Image.open(ROOT / studio()["icon"]).convert("RGBA").resize((n, n), Image.LANCZOS).save(buf, "PNG")
-            return self.send(200, buf.getvalue(), "image/png")
-        if u.path == "/sw.js":  # the installed app's helper: says so plainly when Offcuts isn't running
-            return self.send(200, SW.encode(), "text/javascript")
         if u.path == "/favicon.svg" and (ROOT / "assets/brand/offcuts-favicon.svg").exists():
             return self.send_file(ROOT / "assets/brand/offcuts-favicon.svg")
         if u.path == "/logo" and studio().get("logo"):
@@ -807,11 +812,11 @@ class Handler(BaseHTTPRequestHandler):
         if not st:
             raise ValueError("no such episode")
         if path == "/api/continue":  # after the picks are in, or the review is saved
-            if st.get("waiting") == "picks" and not has_picks(name):
+            if st.get("waiting") == "picks" and not has_picks(name) and not can_pick():
                 raise ValueError("no clips picked yet: ask Claude in chat to pick the clips for " + name)
             if st.get("waiting") == "review":
                 if not newest_saved(name):
-                    raise ValueError("press Save my choices on the review page first (it goes to Downloads)")
+                    raise ValueError("open the review and press Save and make the clips")
                 st["step"] = "finish"
             st["waiting"] = None
             save_state(name, st)
@@ -829,12 +834,6 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("add the Posting Desk admin key first")
             jobs[name] = threading.Thread(target=desk_job, args=(name,), daemon=True)
             jobs[name].start()
-            return {"ok": True}
-        if path == "/api/reveal":  # show one of the episode's files in Finder, ready to drag into a website
-            f = Path(os.path.normpath(OUT / name / b.get("path", "")))
-            if not f.is_relative_to(OUT / name) or not f.exists():
-                raise ValueError("can't find that file any more")
-            subprocess.run(["open", "-R", str(f)])
             return {"ok": True}
         if path == "/api/tidy":
             if name in jobs or st.get("status") != "done":
@@ -891,8 +890,7 @@ class Handler(BaseHTTPRequestHandler):
             save_state(name, st)
             return {"ok": True}
         if path == "/api/open":
-            what = {"review": OUT / name / "posts.html", "kit": OUT / name / "kit" / "kit.html",
-                    "folder": OUT / name}.get(b.get("what"))
+            what = {"folder": OUT / name}.get(b.get("what"))
             if b.get("what") == "zip":
                 z = episode_zip(name, st) or find_zip(name, st.get("guest"))
                 if not z:

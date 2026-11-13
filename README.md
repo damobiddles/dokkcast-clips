@@ -75,5 +75,4 @@ The app runs these; each also works on its own from `App/` with `.venv/bin/pytho
 | `dokkclip.py` | the shared rendering: captions, logo, background, layouts |
 
 Layouts, caption style, music level and posting days and times are in `brand.json`. `dokkepisode.py`
-can still make a full-length edit (`review`, then `render` without `--only clips`), and `dokkpost.py
-schedule` can post through Postiz, but neither is part of the routine.
+only makes clips now; the full-length edit and Postiz scheduling were removed (they are in git history).

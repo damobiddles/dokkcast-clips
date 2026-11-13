@@ -5,10 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Offcuts</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="manifest" href="/manifest.webmanifest">
-<link rel="apple-touch-icon" href="/icon-180.png">
-<meta name="theme-color" content="#0B0B0D">
-<meta name="apple-mobile-web-app-title" content="Offcuts">
 <style>
   :root { --bg: #0A0F2C; --panel: #141a3d; --line: #2a3163; --text: #f2f4ff; --dim: #9aa3d0; --hi: #75C0FB; --ok: #7be0a6; --warn: #ff8a8a; --wait: #ffd27a; --field: #0d1233; --button: #222a5c; --code: #070b22; --bw: 1px; --shadow: none; --radius: 10px; --scheme: dark; --head: inherit; --track: var(--line); }
   * { box-sizing: border-box; }
@@ -61,6 +57,14 @@
   .ep-head b { font-size: 16px; }
   .dim { color: var(--dim); font-size: 13px; }
   details { margin-top: 10px; }
+  details.more { margin: 0; }
+  details.more summary { list-style: none; display: inline-block; padding: 7px 14px; font-size: 13px; color: var(--dim);
+    border: var(--btn-bw, var(--bw)) solid var(--btn-line, var(--line)); border-radius: var(--btn-radius, 6px); }
+  details.more summary:hover { color: var(--text); border-color: var(--hi); }
+  details.more[open] summary { color: var(--text); }
+  details.more summary::-webkit-details-marker { display: none; }
+  details.more[open] { flex-basis: 100%; }
+  details.more .row { margin-top: 4px; }
   summary { cursor: pointer; color: var(--dim); font-size: 13px; }
   pre { background: var(--code); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 12px; max-height: 220px;
     overflow: auto; white-space: pre-wrap; margin: 6px 0 0; }
@@ -114,7 +118,7 @@
 <header><div class="wrap wide brand">
   <img id="logo" alt="" hidden>
   <div><h1 id="name">Studio</h1><div class="sub" id="tagline"></div></div>
-  <nav><a href="#episodes" data-view="episodes">Episodes<span class="n" id="n-eps" hidden></span></a><a href="#new" data-view="new">New episode</a><a href="#kits" data-view="kits">Brand kits</a><a href="#" id="home-folder" title="Source files, Ready to post and Working files">Offcuts folder</a></nav>
+  <nav><a href="#episodes" data-view="episodes">Episodes<span class="n" id="n-eps" hidden></span></a><a href="#new" data-view="new">New episode</a><a href="#kits" data-view="kits">Brand kits</a><a href="#settings" data-view="settings">Settings<span class="n" id="n-set" hidden>!</span></a><a href="#" id="home-folder" title="Source files, Ready to post and Working files">Offcuts folder</a></nav>
 </div></header>
 <main><div class="wrap wide">
   <div class="card attn" id="attn" hidden></div>
@@ -148,12 +152,7 @@
     </div>
   </section>
 
-  <section class="view" id="v-new" hidden>
-  <div class="how">
-    <div><b>1 · New episode</b>Choose the video and music and press Start. Offcuts transcribes it and picks the clips.</div>
-    <div><b>2 · Review</b>When it's ready, it opens the review: watch, set the music, edit the captions, approve, then make the clips.</div>
-    <div><b>3 · Posting Desk</b>Upload the finished episode to Posting Desk and send its link to whoever posts.</div>
-  </div>
+  <section class="view" id="v-settings" hidden>
   <div class="card" id="deskcard">
     <h2>Posting Desk</h2>
     <div class="dim" id="desk-has">Offcuts can upload finished episodes to Posting Desk. Paste the desk's admin key once; it's kept on this Mac only.</div>
@@ -166,14 +165,18 @@
       <label class="opt"><input type="radio" name="mode" value="chat"> Claude in chat: the app pauses after transcribing and you ask Claude to pick the clips</label>
       <label class="opt"><input type="radio" name="mode" value="api"> Automatic: the app asks Claude itself (needs an Anthropic API key, about 30p an episode)</label>
     </div>
-    <div id="macrow" class="dim" style="display:none;margin-top:10px">Claude Code isn't signed in on this Mac yet. Once, in Terminal:
-      <code>curl -fsSL https://claude.ai/install.sh | bash</code>, then type <code>claude</code> and sign in with your Claude account.</div>
+    <div id="macrow" class="dim" style="display:none;margin-top:10px">Claude Code isn't signed in on this Mac yet, so for now episodes wait for Claude in chat. To sign in once,
+      open Terminal, type <code>claude</code>, press Enter and sign in with your Claude account. (No claude there? First run
+      <code>curl -fsSL https://claude.ai/install.sh | bash</code>.)</div>
     <div id="keyrow" style="display:none">
       <div class="dim" style="margin-top:10px">Paste an Anthropic API key (console.anthropic.com, Settings, API keys). It's kept on this Mac only.</div>
       <div class="row"><input type="password" id="key" placeholder="sk-ant-..." style="flex:1;min-width:200px"><button id="savekey">Save key</button></div>
     </div>
   </div>
 
+  </section>
+
+  <section class="view" id="v-new" hidden>
   <div class="card">
     <h2>New episode</h2>
     <div class="grid">
@@ -185,7 +188,7 @@
       <label>First post</label><input type="date" id="start">
       <label>Guest photo</label><div class="pick"><button data-choose="photo">Choose…</button><span class="path" id="p-photo">Optional, for the covers</span></div>
     </div>
-    <div class="row"><button class="primary" id="go">Start</button><span class="dim">Takes about 15 minutes, then the review opens here.</span></div>
+    <div class="row"><button class="primary" id="go">Start</button><span class="dim">Takes about 15 minutes, then the review opens here.</span><span class="dim" id="pickline"></span></div>
   </div>
   </section>
 </div></main>
@@ -296,28 +299,31 @@ function status(ep) {
   if (ep.status === "done" && ep.tidied) return `<div class="status">Tidied up: the videos are kept in the zip${ep.zip ? `, ${esc(base(ep.zip))}` : ""}.</div>` + deskLine(ep);
   if (ep.status === "done") return `<div class="status">Done. The zip is ready${ep.zip ? `: ${esc(base(ep.zip))}` : ""}.` +
     (ep.no_covers ? ` <span class="warn">It has no cover graphics: see Details for why.</span>` : "") + `</div>` + deskLine(ep);
-  if (ep.waiting === "picks") return `<div class="status">Transcribed. Now tell Claude in chat: <b>pick the clips for ${esc(ep.name)}</b>. When Claude says they're in, press Continue.</div>`;
+  if (ep.waiting === "picks") return state.auto_pick && state.claude_ready !== false
+    ? `<div class="status">Transcribed. Press <b>Continue</b> and Offcuts picks the clips itself.</div>`
+    : `<div class="status">Transcribed. Now tell Claude in chat: <b>pick the clips for ${esc(ep.name)}</b>. When Claude says they're in, press Continue.` +
+      (ep.pick_note === "signin" || (state.mode === "mac" && state.claude_ready === false) ? ` <span class="dim">(Offcuts can pick them itself once Claude Code is signed in: see <a href="#settings">Settings</a>.)</span>` : "") + `</div>`;
   if (ep.waiting === "review") return `<div class="status">Your turn: open the review, watch the clips, set the music, edit the captions and tick Approve. Then press <b>Save and make the clips</b>.</div>`;
   const what = { prep: "Transcribing and finding the speakers (about 10 minutes)", pick: "Claude is picking the clips and writing the captions",
     review: "Planning the posting dates and building the review page", finish: "Rendering the clips with music, covers, kit and zip (about 20 minutes)" }[ep.step];
   return `<div class="status"><span class="spin"></span>${what || "Working"} …</div>`;
 }
 function actions(ep) {
-  const b = [];
+  const b = [], more = [];
   if (ep.status === "error") b.push(`<button data-act="continue">Try again</button>`);
   if (ep.waiting === "picks") b.push(`<button class="primary" data-act="continue">Continue</button>`);
   if (ep.waiting === "review") b.push(`<button class="primary" data-go="${esc(ep.review_url)}">Open the review</button>`);
   if (ep.waiting === "review" && ep.has_kit) b.push(`<button data-act="keep">Keep the clips already made</button>`);
-  if (ep.status === "done" && !ep.uploading && !ep.tidied) b.push(`<button class="${ep.desk_link ? "" : "primary"}" data-act="desk">${ep.desk_link ? "Upload to Posting Desk again" : "Upload to Posting Desk"}</button>`);
+  if (ep.status === "done" && !ep.uploading && !ep.tidied) b.push(`<button class="${ep.desk_link ? "" : "primary"}" data-act="desk">${ep.desk_link ? "Upload again" : "Upload to Posting Desk"}</button>`);
   if (ep.desk_link) b.push(`<button class="primary" data-copylink="${esc(ep.desk_link)}">Copy the link</button>`);
-  if (ep.status === "done") b.push(
-    `<button data-act="open" data-what="zip">Show zip in Finder</button>`, `<button data-act="reopen">Change and remake</button>`);
-  if (ep.status === "done" && !ep.tidied && !ep.uploading) b.push(`<button data-act="tidy">Tidy up</button>`);
-  if (!ep.running && ep.status !== "done") b.push(`<button data-act="photo">${ep.photo || ep.photo_set ? "Change" : "Add"} guest photo</button>`);
-  if (!ep.running && !ep.tidied) b.push(`<button data-act="rebrand">Change brand</button>`);
-  b.push(`<button data-act="open" data-what="folder">Open folder</button>`);
-  if (ep.status !== "done") b.push(`<button class="danger" data-act="cancel">Cancel project</button>`);
-  return b.join("");
+  if (ep.status === "done") b.push(`<button data-act="open" data-what="zip">Show zip in Finder</button>`);
+  if (ep.status === "done") more.push(`<button data-act="reopen">Change and remake</button>`);
+  if (ep.status === "done" && !ep.tidied && !ep.uploading) more.push(`<button data-act="tidy">Tidy up</button>`);
+  if (!ep.running && ep.status !== "done") more.push(`<button data-act="photo">${ep.photo || ep.photo_set ? "Change" : "Add"} guest photo</button>`);
+  if (!ep.running && !ep.tidied && !ep.uploading) more.push(`<button data-act="rebrand">Change brand</button>`);
+  more.push(`<button data-act="open" data-what="folder">Open folder</button>`);
+  if (ep.status !== "done") more.push(`<button class="danger" data-act="cancel">Cancel project</button>`);
+  return b.join("") + `<details class="more" data-more="${esc(ep.name)}"><summary>More</summary><div class="row">${more.join("")}</div></details>`;
 }
 function draw() {
   document.querySelectorAll("input[name=mode]").forEach(r => r.checked = r.value === state.mode);
@@ -325,7 +331,10 @@ function draw() {
     "The admin key is saved: finished episodes have an Upload to Posting Desk button. Paste a new key here to change it." :
     "Offcuts can upload finished episodes to Posting Desk. Paste the desk's admin key once; it's kept on this Mac only.";
   document.getElementById("keyrow").style.display = state.mode === "api" && !state.has_key ? "block" : "none";
-  document.getElementById("macrow").style.display = state.mode === "mac" && state.claude_ready === false ? "block" : "none";
+  const signin = state.mode === "mac" && state.claude_ready === false;
+  document.getElementById("macrow").style.display = signin ? "block" : "none";
+  document.getElementById("n-set").hidden = !signin && !(state.mode === "api" && !state.has_key);
+  document.getElementById("pickline").textContent = state.auto_pick && !signin ? "" : " Clip picking: Claude in chat (change it in Settings).";
   const s = document.getElementById("start"); if (!s.value) s.value = state.next_start;
   // whatever is waiting on you goes at the top, so it isn't missed under the form
   const need = state.episodes.filter(ep => ep.status === "waiting" || ep.status === "error");
@@ -344,7 +353,7 @@ function draw() {
   const n = document.getElementById("n-eps"); n.hidden = !need.length; n.textContent = need.length;
   if (!state.episodes.length) document.getElementById("eps").innerHTML = "";
   const box = document.getElementById("eps");
-  const open = new Set([...box.querySelectorAll("details[open]")].map(d => d.dataset.name));
+  const open = new Set([...box.querySelectorAll("details[open]")].map(d => d.dataset.name || "more:" + d.dataset.more));
   box.innerHTML = state.episodes.map(ep => `<div class="card" data-name="${esc(ep.name)}">
       <div class="ep-head"><b>${esc(ep.guest || ep.name)}</b><span class="dim">${esc(ep.role || "")}</span><span class="tag">${esc(ep.kit)}</span>
         <span class="dim" style="margin-left:auto">${esc(base(ep.video))}${ep.music ? " · " + esc(base(ep.music)) : ""}</span></div>
@@ -354,6 +363,7 @@ function draw() {
       <details data-name="${esc(ep.name)}" ${open.has(ep.name) ? "open" : ""}><summary>Details</summary><pre>${esc(ep.log || "Nothing yet")}</pre></details>
     </div>`).join("");
   if (!state.episodes.length) box.innerHTML = `<div class="empty">No episodes yet. <a href="#new">Start one</a>.</div>`;
+  box.querySelectorAll("details.more").forEach(d => { if (open.has("more:" + d.dataset.more)) d.open = true; });
   box.querySelectorAll("[data-go]").forEach(b => b.onclick = () => location.href = b.dataset.go);
   box.querySelectorAll("[data-copylink]").forEach(b => b.onclick = () => copy(b, b.dataset.copylink));
   box.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
@@ -362,7 +372,7 @@ function draw() {
     if (act === "reopen" && !confirm("Go back to the review? Making the clips again takes about 20 minutes" +
         (ep && ep.tidied ? " and needs the episode video in Source files." : ". You can still keep the ones already made."))) return;
     if (act === "desk" && !state.has_desk_key) {
-      toast("Add the Posting Desk admin key first (New episode, Posting Desk)"); location.hash = "new"; return;
+      toast("Add the Posting Desk admin key first (Settings)"); location.hash = "settings"; return;
     }
     if (act === "desk" && ep.desk_link && !confirm("Upload it again? The link stays the same, and the ticks people made are kept.")) return;
     if (act === "tidy") {
@@ -386,11 +396,11 @@ function draw() {
         <button class="primary" data-ok>Use this brand</button><button data-no>Keep the current one</button>`;
       paused = true;  // until a choice is made, or a minute passes, so updates don't stop for good
       const resume = setTimeout(() => { paused = false; refresh(); }, 60000);
-      row.querySelector("[data-no]").onclick = () => { clearTimeout(resume); paused = false; refresh(); };
+      row.querySelector("[data-no]").onclick = () => { clearTimeout(resume); paused = false; lastState = null; refresh(); };
       row.querySelector("[data-ok]").onclick = async () => {
         const kit = row.querySelector(".kitpick").value;
         clearTimeout(resume); paused = false;
-        if (kit === ep.kit) return refresh();
+        if (kit === ep.kit) { lastState = null; return refresh(); }
         const r = await post("/api/rebrand", { name, kit });
         toast(r.remake ? `Now ${kit}. Press Change and remake to make the clips with it.` :
           `Now ${kit}. The captions were written for ${ep.kit}, so give them a read in the review.`, true);
@@ -408,17 +418,21 @@ function draw() {
   });
 }
 let seen = null;  // each episode's state at the last look, to notice when one becomes ready to review
-let paused = false;  // while a choice is open on a card, so the next refresh doesn't wipe it
+let paused = false;
+let lastState = null;  // while a choice is open on a card, so the next refresh doesn't wipe it
 async function refresh() {
   if (paused) return;
   try {
-    state = await (await fetch("/api/state")).json();
+    const text = await (await fetch("/api/state")).text();
+    if (text === lastState) return;  // nothing changed: leave the page as it is (a half-done click, selected text)
+    lastState = text; state = JSON.parse(text);
     const ready = state.episodes.find(ep => ep.waiting === "review" && seen && seen[ep.name] && seen[ep.name] !== "review");
     seen = Object.fromEntries(state.episodes.map(ep => [ep.name, ep.waiting || ep.status]));
-    if (ready) return location.href = ready.review_url;  // straight on to the review when it's ready
+    // straight on to the review when it's ready, unless something else is being filled in
+    if (ready && (location.hash || "#episodes") === "#episodes") return location.href = ready.review_url;
     draw();
   }
-  catch (e) { document.getElementById("eps").innerHTML = `<div class="card status err">The app has stopped. Open ${esc(STUDIO ? STUDIO.name : 'the app')} again.</div>`; }
+  catch (e) { lastState = null; document.getElementById("eps").innerHTML = `<div class="card status err">The app has stopped. Open ${esc(STUDIO ? STUDIO.name : 'the app')} again.</div>`; }
 }
 async function copy(btn, text) {
   try { await navigator.clipboard.writeText(text); }
@@ -437,7 +451,7 @@ document.getElementById("savedeskkey").onclick = async () => {
 // ------------------------------------------------------------------ the views
 function show() {
   const v = (location.hash || "#episodes").slice(1);
-  const view = ["episodes", "new", "kits"].includes(v) ? v : "episodes";
+  const view = ["episodes", "new", "kits", "settings"].includes(v) ? v : "episodes";
   if (view === "kits" || view === "new") loadKits();
   if (view === "new") loadSources();
   document.querySelectorAll(".view").forEach(s => s.hidden = s.id !== "v-" + view);
@@ -522,7 +536,8 @@ let kitFromNew = false;
 document.getElementById("kit-new").onclick = () => { kitFromNew = true; location.hash = "kits"; setTimeout(() => editKit(null), 50); };
 
 window.onhashchange = show;
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+if ("serviceWorker" in navigator)  // the old installed-app helper, no longer needed now Offcuts has its own window
+  navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister())).catch(() => {});
 show();
 refresh();
 setInterval(refresh, 3000);

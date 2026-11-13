@@ -14,11 +14,10 @@
   .summary { color: var(--dim); font-size: 13px; margin-top: 4px; }
   main { padding: 0 16px 90px; }
   @media (max-width: 640px) { .post { grid-template-columns: 1fr !important; } .pv { max-width: 280px; } }
-  .post { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 14px 0; display: grid; grid-template-columns: 200px 1fr; gap: 14px; }
+  .post { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 14px 0; display: grid; grid-template-columns: 240px 1fr; gap: 14px; }
   .post.off { opacity: .6; }
   .post.ok { border-color: var(--ok); }
 
-  .post { grid-template-columns: 240px 1fr; }
   .frame { position: relative; width: 100%; aspect-ratio: 9 / 16; background: #000; border-radius: 8px; overflow: hidden;
     container-type: inline-size; cursor: pointer; touch-action: none; user-select: none; }
   .frame video { position: absolute; background: #000; pointer-events: none; }
@@ -98,7 +97,7 @@ if (M) {
   document.getElementById("mix").style.display = "flex";
   document.getElementById("track").textContent = M.name;
   const show = () => { out.textContent = `${M.db} dB`; lv.value = M.db; music.volume = vol(M.db); };
-  lv.oninput = () => { M.db = +lv.value; show(); };
+  lv.oninput = () => { M.db = +lv.value; show(); dirty = true; };
   show();
 }
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -117,6 +116,10 @@ function counter(el, box, limit) {
 }
 
 const list = document.getElementById("posts");
+let dirty = false;  // changes not saved yet
+list.addEventListener("input", () => dirty = true);
+list.addEventListener("change", () => dirty = true);
+
 function draw() {
   list.innerHTML = "";
   for (const p of D.posts) {
@@ -210,7 +213,7 @@ function draw() {
     }
     function setFrame(ch) {
       p.frame[shape] = Object.assign({ mode: mode(), x: xpos() }, ch);
-      reframed[shape] = true;
+      reframed[shape] = true; dirty = true;
       setSrc(); layout();
     }
     function setSrc() {
@@ -234,7 +237,7 @@ function draw() {
       const px = fr.clientWidth / dims.g.w;  // screen pixels per canvas pixel
       const half = dims.ww / dims.vw / 2;
       p.frame[shape] = { mode: "fill", x: Math.max(half, Math.min(1 - half, drag.x - dx / (dims.W * px))) };
-      reframed[shape] = true; layout();
+      reframed[shape] = true; dirty = true; layout();
     });
     fr.addEventListener("pointerup", () => {
       if (drag && !drag.moved) v.paused ? v.play() : v.pause();
@@ -292,7 +295,11 @@ function draw() {
 }
 draw();
 
-document.getElementById("all").onclick = () => { D.posts.forEach(p => p.approved = true); draw(); };
+document.getElementById("all").onclick = () => {
+  D.posts.forEach(p => p.approved = true); dirty = true;
+  document.querySelectorAll(".post").forEach(d => { d.className = "post ok"; d.querySelector(".ap").checked = true; });
+  summary();
+};
 // opened through the app: save straight back to it, no Downloads
 const APP = location.protocol.startsWith("http");
 const msg = document.getElementById("msg");
@@ -303,7 +310,7 @@ if (APP) {
 }
 function choices() {
   const out = JSON.parse(JSON.stringify(D));
-  delete out.shapes; out.posts.forEach(p => { delete p.files; delete p.src; delete p.music_at; delete p.sample; delete p.speakers; });
+  delete out.shapes; out.posts.forEach(p => { delete p.files; delete p.src; delete p.music_at; delete p.sample; delete p.speakers; delete p.runs; });
   delete out.look;
   if (M) out.music_db = M.db;
   delete out.music;
@@ -313,9 +320,13 @@ async function toApp(go) {
   const r = await fetch("/api/save", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: D.episode, posts: choices(), go }) });
   if (!r.ok) { msg.textContent = "Couldn't save: " + ((await r.json()).error || "is the app still open?"); return; }
+  dirty = false;
   if (go) { music && music.pause(); location.href = "/#episodes"; }
   else msg.textContent = "Saved. Make the clips when you're ready.";
 }
+document.getElementById("back").onclick = e => {
+  if (dirty && !confirm("Leave without saving? Your changes on this page will be lost.")) e.preventDefault();
+};
 document.getElementById("make").onclick = () => {
   const n = D.posts.filter(p => p.approved).length;
   if (!n) { msg.textContent = "Tick Approve on the clips to make first."; return; }
