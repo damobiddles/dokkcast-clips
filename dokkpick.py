@@ -6,7 +6,7 @@
 Reads output/<name>/transcript.txt (from dokkepisode.py prep) and asks Claude for the speakers'
 names, the best 30-60 s clips (as word numbers, so they start and end on whole sentences), and
 for each clip a title, captions for TikTok, Instagram and LinkedIn, and a YouTube Shorts title and
-description. Writes them into plan.json (through dokkepisode.py suggest) and copy.json, ready for
+description. Writes them into plan.json and copy.json, ready for
 dokkpost.py plan and review, where every clip and caption is checked before anything is made.
 
 Needs the anthropic package and an API key in ANTHROPIC_API_KEY or ~/.dokkcast/anthropic_key, or with
@@ -231,7 +231,7 @@ def main():
 
 
 def save(a, cfg, wd, words, picks):
-    """Write the picks into plan.json (via dokkepisode.py suggest) and copy.json."""
+    """Write the picks into plan.json and copy.json."""
     clips, copy = [], {}
     for n, c in enumerate(sorted(picks.clips, key=lambda c: c.first_word), 1):
         f, l = max(0, c.first_word), min(len(words) - 1, c.last_word)
@@ -249,10 +249,14 @@ def save(a, cfg, wd, words, picks):
     speakers = {str(s.speaker): {"name": (host or s.name) if s.role.lower() == "host" else (a.guest or s.name),
                                  "role": (cfg["host_role"] or "Host") if s.role.lower() == "host" else (a.role or s.role)}
                 for s in picks.speakers}
-    sug = wd / "suggestions.json"
-    sug.write_text(json.dumps({"speakers": speakers, "clips": clips}, indent=1, ensure_ascii=False))
+    (wd / "suggestions.json").write_text(json.dumps({"speakers": speakers, "clips": clips}, indent=1, ensure_ascii=False))
+    plan = json.loads((wd / "plan.json").read_text())
+    for spk, who in speakers.items():  # who's who, and the clips (any earlier picks are replaced)
+        plan.setdefault("speakers", {}).setdefault(spk, {}).update({k: v for k, v in who.items() if v})
+    plan["clips"] = clips
+    (wd / "plan.json").write_text(json.dumps(plan, indent=1, ensure_ascii=False))
     (wd / "copy.json").write_text(json.dumps(copy, indent=1, ensure_ascii=False))
-    subprocess.run([sys.executable, str(ROOT / "dokkepisode.py"), "suggest", a.name, str(sug)], check=True)
+    print(f"{len(clips)} clips -> {wd / 'plan.json'}")
 
 
 if __name__ == "__main__":
