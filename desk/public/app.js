@@ -14,7 +14,7 @@ const local = {
 };
 const LINK = (new URLSearchParams(location.search).get("e") || "").replace(/[^A-Za-z0-9_-]/g, "");
 const linkFor = share => location.origin + "/?e=" + encodeURIComponent(share);
-const S = { episodes: [], ticks: {}, filter: local.get("desk.filter") || "todo", ep: "", loaded: false, err: "",
+const S = { episodes: [], ticks: {}, filter: local.get("desk.filter") === "done" ? "done" : "todo", ep: "", loaded: false, err: "",
             name: local.get("desk.name"), key: local.get("desk.key"), busy: false };
 
 const media = id => "/media/" + encodeURIComponent(id);
@@ -76,7 +76,7 @@ function render() {
   $("admin-toggle").hidden = !!LINK && !S.key;
   if (!LINK && !S.key) {
     $("stats").innerHTML = ""; $("help").hidden = true;
-    for (const f of ["todo", "done", "all"]) $("f-" + f).parentElement.hidden = true;
+    $("f-todo").parentElement.hidden = true;
     $("me-btn").hidden = true;
     $("list").dataset.sig = "";
     $("list").innerHTML = `<div class="empty"><b>Open the link you were sent</b>Each episode has its own link. Ask whoever sent you here for it.</div>`;
@@ -98,7 +98,7 @@ function render() {
   const sel = $("f-ep"), cur = S.ep;
   sel.innerHTML = `<option value="">All episodes</option>` + S.episodes.map(e => `<option value="${esc(e.id)}">${esc(e.title)}</option>`).join("");
   sel.value = S.episodes.some(e => e.id === cur) ? cur : "";
-  for (const f of ["todo", "done", "all"]) $("f-" + f).setAttribute("aria-pressed", String(S.filter === f));
+  for (const f of ["todo", "done"]) $("f-" + f).setAttribute("aria-pressed", String(S.filter === f));
 
   let shown = posts.filter(x => !S.ep || x.e.id === S.ep);
   if (S.filter === "todo") shown = shown.filter(x => x.state !== "done");
@@ -158,7 +158,7 @@ function tile(e, p, pl) {
   const when = t && t.at ? new Date(t.at).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
   r.innerHTML = `<div class="tile-head"><span class="pname">${esc(NAMES[pl] || pl)}</span><span class="shape">${esc(x.shape || "")}</span>
       <label class="tick" for="${tid}"><input type="checkbox" id="${tid}" ${t ? "checked" : ""}> Posted</label></div>
-    ${x.video ? `<video controls preload="metadata" playsinline src="${media(x.video)}"></video>` : `<div class="missing">${esc(x.missing || "This video isn't on the desk. Post it from the episode zip.")}</div>`}
+    ${x.video ? `<video controls preload="none" playsinline src="${media(x.video)}"${x.cover ? ` poster="${media(x.cover)}"` : ""}></video>` : `<div class="missing">${esc(x.missing || "This video isn't on the desk. Post it from the episode zip.")}</div>`}
     ${pl === "youtube" && x.title ? `<div class="yt">${esc(x.title)}</div>` : ""}
     <div class="cap">${esc(x.caption || "")}</div>
     <button class="more" hidden>Show all</button>
@@ -196,7 +196,7 @@ function flash(btn, msg, ms = 1400) {
 
 async function setTick(input, ep, clip, pl) {
   const on = input.checked;
-  if (on && !S.name) { input.checked = false; showMe(true); return; }
+  if (on && !S.name) { input.checked = false; S.pending = { ep, clip, pl }; showMe(true); return; }
   input.disabled = true;
   try {
     await api("/api/tick", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ e: LINK, ep, clip, pl, name: S.name, done: on }) });
@@ -218,6 +218,12 @@ $("me-form").onsubmit = ev => {
   ev.preventDefault();
   S.name = $("me-name").value.trim().slice(0, 60); local.set("desk.name", S.name);
   $("me-panel").hidden = true; render();
+  // finish the tick that asked for the name
+  const t = S.pending; S.pending = null;
+  if (t && S.name) {
+    const box = [...document.querySelectorAll(".tile input[type=checkbox]")].find(i => i.id === "t-" + tickId(t.ep, t.clip, t.pl).replace(/[^a-zA-Z0-9_-]/g, "_"));
+    if (box && !box.checked) { box.checked = true; setTick(box, t.ep, t.clip, t.pl); }
+  }
 };
 
 // ---------- admin: unlock, add and remove episodes
@@ -269,7 +275,7 @@ async function addZip(file) {
     const root = kits[0].slice(0, -"kit.html".length);
     const D = readKit(await zip.file(kits[0]).async("string"));
     const title = file.name.replace(/\.zip$/i, "") || D.episode;
-    const epId = slug(D.episode || title);
+    const epId = slug(title);  // the zip name carries the show, so two clients' "Episode 1" don't collide
     const shapes = D.shapes || {};
 
     const jobs = new Map(), byShape = {};  // zip path -> content type; one video per post and shape
@@ -362,7 +368,7 @@ async function removeEpisode(btn, e) {
 }
 
 // ---------- filters and start
-for (const f of ["todo", "done", "all"]) $("f-" + f).onclick = () => { S.filter = f; local.set("desk.filter", f); render(); };
+for (const f of ["todo", "done"]) $("f-" + f).onclick = () => { S.filter = f; local.set("desk.filter", f); render(); };
 $("f-ep").onchange = ev => { S.ep = ev.target.value; render(); };
 render();
 load();

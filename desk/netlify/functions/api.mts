@@ -15,8 +15,11 @@ const store = () => getStore({ name: "desk", consistency: "strong" })
 const SAFE = /^[A-Za-z0-9_-]{1,80}$/
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "cache-control": "no-store" } })
 const isAdmin = (req: Request) => {
-  const key = Netlify.env.get("ADMIN_KEY")
-  return !!key && req.headers.get("x-admin-key") === key
+  const key = Netlify.env.get("ADMIN_KEY") || "", got = req.headers.get("x-admin-key") || ""
+  if (!key || got.length !== key.length) return false
+  let diff = 0  // compare every character, so the time taken doesn't hint at the key
+  for (let i = 0; i < key.length; i++) diff |= key.charCodeAt(i) ^ got.charCodeAt(i)
+  return diff === 0
 }
 // a tick is one key, so listing the ticks reads them all at once and two people can't overwrite each other
 const b64 = (s: string) => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
@@ -106,8 +109,10 @@ export default async (req: Request, context: Context) => {
     const [, what, id, sub, n] = parts
     if (what === "state" && req.method === "GET") return await state(req)
     if (what === "tick" && req.method === "POST") {
-      const { e, ep, clip, pl, name, done } = await req.json()
-      if (![ep, String(clip), pl].every(x => SAFE.test(String(x)))) return json({ error: "bad tick" }, 400)
+      const body = await req.json().catch(() => null)
+      if (!body || typeof body !== "object") return json({ error: "bad tick" }, 400)
+      const { e, ep, clip, pl, name, done } = body
+      if (![ep, clip, pl].every(x => (typeof x === "string" || typeof x === "number") && SAFE.test(String(x)))) return json({ error: "bad tick" }, 400)
       if (!isAdmin(req) && (await episodeForLink(e))?.id !== ep) return json({ error: "This link can't tick that post." }, 403)
       const prefix = `tick/${ep}~${clip}~${pl}~`
       const old = await s.list({ prefix })
@@ -132,8 +137,12 @@ export default async (req: Request, context: Context) => {
         return json({ ok: true, share })
       }
       if (req.method === "PUT") {
-        const doc = await req.json()
-        const old = await s.get(`ep/${id}`, { type: "json" }) as { files?: string[]; share?: string } | null
+        const doc = await req.json().catch(() => null)
+        if (!doc || !Array.isArray(doc.posts)) return json({ error: "That episode has no posts in it." }, 400)
+        const old = await s.get(`ep/${id}`, { type: "json" }) as { files?: string[]; share?: string; title?: string } | null
+        // never let one client's episode replace another's that happens to share the id
+        if (old && old.title && doc.title && old.title !== doc.title)
+          return json({ error: `"${old.title}" is already on the desk under this name. Rename the zip, or remove that episode first.` }, 409)
         const share = old?.share || newLink()  // adding an episode again keeps its link
         await s.set(`share/${share}`, id)
         await s.setJSON(`ep/${id}`, { ...doc, id, share })
